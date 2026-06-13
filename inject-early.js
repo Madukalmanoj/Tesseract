@@ -52,26 +52,56 @@
     return false;
   }
 
+  function scanJsonForFiles(obj) {
+    if (!obj || typeof obj !== 'object') return;
+    if (Array.isArray(obj)) {
+      for (let i = 0; i < obj.length; i++) scanJsonForFiles(obj[i]);
+      return;
+    }
+    const id = obj.id || obj.fileId || obj.file_id || obj.file_uuid || obj.uuid || null;
+    const name = obj.name || obj.filename || obj.file_name || obj.original_filename || obj.original_name || null;
+    const isFileId = (typeof id === 'string') && (id.startsWith('file-') || /^[a-f0-9-]{36}$/.test(id));
+    if (isFileId && typeof name === 'string' && name.includes('.')) {
+      window.__cep.idMap[id] = name;
+      const dlUrl = obj.download_url || obj.downloadUrl || obj.url || null;
+      if (dlUrl) {
+        window.__cep.urlMap[dlUrl] = name;
+        try { window.__cep.urlMap[new URL(dlUrl, window.location.origin).href] = name; } catch(_) {}
+      }
+    }
+    for (const k in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, k)) scanJsonForFiles(obj[k]);
+    }
+  }
+
   function getName(url) {
     if (!url) return null;
-    // 1. pre-registered from /download JSON
+    // 1. Exact match in urlMap
     if (window.__cep.urlMap[url]) return window.__cep.urlMap[url];
     try {
       const u = new URL(url, window.location.origin);
       if (window.__cep.urlMap[u.href]) return window.__cep.urlMap[u.href];
       
-      // Try fuzzy signature or file ID mapping
+      // 2. Check file ID mapping from idMap
+      for (const [fileId, name] of Object.entries(window.__cep.idMap)) {
+        if (u.pathname.includes(fileId) || url.includes(fileId)) {
+          return name;
+        }
+      }
+
+      // 3. Try fuzzy signature or file ID mapping from urlMap
       for (const [dlUrl, name] of Object.entries(window.__cep.urlMap)) {
         if (urlsMatchFile(url, dlUrl)) return name;
       }
 
-      // 2. rscd param
+      // 4. rscd param
       const rscd = u.searchParams.get('rscd') || u.searchParams.get('response-content-disposition') || '';
       if (rscd) {
         const m = rscd.match(/filename[*]?=(?:UTF-8'')?["']?([^"';&\n\r]+)/i);
         if (m) return decodeURIComponent(m[1]).replace(/["']/g,'').trim();
       }
-      // 3. path segment
+      
+      // 5. Path segment
       const segs = u.pathname.split('/').filter(Boolean);
       for (let i = segs.length-1; i >= 0; i--) {
         const s = decodeURIComponent(segs[i]);
@@ -237,20 +267,27 @@
     }
 
     try {
-      // ── Intercept ChatGPT /download metadata JSON ────────────────────────
-      // This gives us file_name + download_url BEFORE the blob fetch
+      const ct = resp.headers.get('content-type') || '';
+      
+      // 1. Intercept conversation and messages JSON payloads to map file IDs to filenames
+      if (ct.includes('application/json') && (url.includes('/backend-api/') || url.includes('/api/organizations/'))) {
+        resp.clone().json().then(d => {
+          scanJsonForFiles(d);
+        }).catch(_=>{});
+      }
+
+      // 2. Intercept ChatGPT /download metadata JSON (historical / explicit download trigger)
       if (/\/backend-api\/files\/[^/?]+\/download/.test(url)) {
         resp.clone().json().then(d => {
           const fname   = d.file_name || d.fileName || d.filename || d.name || null;
           const dlUrl   = d.download_url || d.downloadUrl || d.url || null;
           if (fname && dlUrl) {
             window.__cep.urlMap[dlUrl] = fname;
-            // Also without query string
-            try { window.__cep.urlMap[new URL(dlUrl).origin + new URL(dlUrl).pathname] = fname; } catch(_) {}
+            try { window.__cep.urlMap[new URL(dlUrl, window.location.origin).href] = fname; } catch(_) {}
             
             // Check if we already captured a file for this download URL under a generic name
             for (const [k, v] of Object.entries(window.__cep.files)) {
-              if (v.url === dlUrl || (v.url && dlUrl && v.url.split('?')[0] === dlUrl.split('?')[0])) {
+              if (urlsMatchFile(v.url, dlUrl)) {
                 save(fname, v.dataUrl, v.mimeType, v.url);
                 delete window.__cep.files[k];
                 console.log("[CEP] Late-registered and renamed generic file to:", fname);
@@ -261,11 +298,10 @@
         return resp; // don't capture this JSON as a file
       }
 
-      // ── Skip non-file responses ──────────────────────────────────────────
-      const ct = resp.headers.get('content-type') || '';
+      // 3. Skip non-file responses
       if (!isCapture(url, ct)) return resp;
 
-      // ── Capture blob ─────────────────────────────────────────────────────
+      // 4. Capture blob file content
       resp.clone().blob().then(async blob => {
         if (blob.size < 100) return;
         const dataUrl = await b64(blob);
@@ -295,6 +331,7 @@
       if (this.readyState!==4||this.status<200||this.status>=300) return;
       try {
         const url = this.__cepUrl||'';
+        let ct=''; try{ct=this.getResponseHeader('content-type')||'';}catch(_){}
 
         // Intercept ChatGPT /download metadata via XHR
         if (/\/backend-api\/files\/[^/?]+\/download/.test(url)) {
@@ -304,11 +341,11 @@
             const dlUrl = d.download_url || d.downloadUrl || d.url || null;
             if (fname && dlUrl) {
               window.__cep.urlMap[dlUrl] = fname;
-              try { window.__cep.urlMap[new URL(dlUrl).origin + new URL(dlUrl).pathname] = fname; } catch(_) {}
+              try { window.__cep.urlMap[new URL(dlUrl, window.location.origin).href] = fname; } catch(_) {}
               
               // Late rename generic files
               for (const [k, v] of Object.entries(window.__cep.files)) {
-                if (v.url === dlUrl || (v.url && dlUrl && v.url.split('?')[0] === dlUrl.split('?')[0])) {
+                if (urlsMatchFile(v.url, dlUrl)) {
                   save(fname, v.dataUrl, v.mimeType, v.url);
                   delete window.__cep.files[k];
                   console.log("[CEP] XHR late-registered and renamed generic file to:", fname);
@@ -319,7 +356,14 @@
           return;
         }
 
-        let ct=''; try{ct=this.getResponseHeader('content-type')||'';}catch(_){}
+        // Generic XHR JSON scanner to capture file ID metadata mappings
+        if (ct.includes('application/json') && (url.includes('/backend-api/') || url.includes('/api/organizations/'))) {
+          try {
+            const d = JSON.parse(this.responseText);
+            scanJsonForFiles(d);
+          } catch(_) {}
+        }
+
         if (!isCapture(url,ct)) return;
         let blob=null;
         if (this.response instanceof Blob) blob=this.response;
