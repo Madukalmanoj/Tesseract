@@ -20,7 +20,7 @@ function bg(action, data) {
 // ── Get intercepted store from page hook ─────────────────────────────────────
 function getStore() {
   return new Promise(ok => {
-    const t = setTimeout(()=>ok({files:{},orgId:null}), 1500);
+    const t = setTimeout(()=>ok({files:{},orgId:null}), 15000);
     window.addEventListener('__cepReply', function h(e) {
       clearTimeout(t); window.removeEventListener('__cepReply',h);
       ok(e.detail||{files:{},orgId:null});

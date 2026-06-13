@@ -5,7 +5,17 @@
     files: {},      // lcName → {dataUrl,mimeType,filename,url}
     urlMap: {},     // downloadUrl → filename (set from /download JSON)
     idMap:  {},     // fileId → filename
-    orgId:  null
+    orgId:  null,
+    authHeader: null
+  };
+
+  // Hook setRequestHeader to capture Authorization headers in XHR
+  const _xsetHeader = XMLHttpRequest.prototype.setRequestHeader;
+  XMLHttpRequest.prototype.setRequestHeader = function(header, value) {
+    if (header && header.toLowerCase() === 'authorization') {
+      window.__cep.authHeader = value;
+    }
+    return _xsetHeader.apply(this, [header, value]);
   };
 
   const IS_CLAUDE = window.location.hostname.includes('claude.ai');
@@ -257,6 +267,22 @@
     const opts = args[1] || {};
     const url = typeof req==='string'?req:(req instanceof Request?req.url:String(req));
 
+    // Capture auth header
+    let auth = null;
+    if (opts.headers) {
+      if (opts.headers instanceof Headers) {
+        auth = opts.headers.get('Authorization') || opts.headers.get('authorization');
+      } else {
+        auth = opts.headers['Authorization'] || opts.headers['authorization'];
+      }
+    }
+    if (!auth && req instanceof Request && req.headers) {
+      auth = req.headers.get('Authorization') || req.headers.get('authorization');
+    }
+    if (auth) {
+      window.__cep.authHeader = auth;
+    }
+
     // org ID
     const om = url.match(/\/organizations\/([a-f0-9-]{36})\//);
     if (om) window.__cep.orgId = om[1];
@@ -407,7 +433,61 @@
   };
 
   // Event API
-  window.addEventListener('__cepQuery', () => {
+  window.addEventListener('__cepQuery', async () => {
+    // 1. Try to fetch conversation history if authHeader is available and we are on a chatgpt conversation page
+    if (window.__cep.authHeader && window.location.hostname.includes('chatgpt.com')) {
+      const match = window.location.pathname.match(/\/c\/([a-f0-9-]{36})/);
+      if (match) {
+        const convId = match[1];
+        try {
+          const res = await _fetch(`/backend-api/conversation/${convId}`, {
+            headers: {
+              'Authorization': window.__cep.authHeader,
+              'accept': 'application/json'
+            }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            scanJsonForFiles(data);
+            
+            // Scan parsed files. If any file is in our idMap but NOT yet in window.__cep.files:
+            // Fetch it programmatically!
+            for (const [fileId, filename] of Object.entries(window.__cep.idMap)) {
+              const k = filename.toLowerCase().trim();
+              if (!window.__cep.files[k]) {
+                console.log("[CEP] On-demand fetching missing file:", filename, fileId);
+                try {
+                  const dlRes = await _fetch(`/backend-api/files/${fileId}/download`, {
+                    headers: {
+                      'Authorization': window.__cep.authHeader,
+                      'accept': 'application/json'
+                    }
+                  });
+                  if (dlRes.ok) {
+                    const dlMeta = await dlRes.json();
+                    const downloadUrl = dlMeta.download_url || dlMeta.downloadUrl || dlMeta.url;
+                    if (downloadUrl) {
+                      const fileRes = await _fetch(downloadUrl);
+                      if (fileRes.ok) {
+                        const buffer = await fileRes.arrayBuffer();
+                        const dataUrl = await toDataUrl(buffer, fileRes.headers.get('content-type'));
+                        save(filename, dataUrl, fileRes.headers.get('content-type'), downloadUrl);
+                        console.log("[CEP] On-demand successfully saved missing file:", filename);
+                      }
+                    }
+                  }
+                } catch(e) {
+                  console.warn("[CEP] Failed on-demand fetch for file:", filename, e);
+                }
+              }
+            }
+          }
+        } catch(e) {
+          console.warn("[CEP] On-demand conversation fetch failed:", e);
+        }
+      }
+    }
+    
     window.dispatchEvent(new CustomEvent('__cepReply', {detail:{files:window.__cep.files, orgId:window.__cep.orgId}}));
   });
   window.addEventListener('__cepStore', e => {
