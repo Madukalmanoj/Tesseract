@@ -220,7 +220,9 @@ CRITICAL RULES:
    - ## Current State & Metrics: [What has been achieved so far]
    - ## Technical Foundation: [Preserve critical code, libraries, and architecture]
    - ## Task to Continue: [What the AI needs to do next]
-5. Do not include introductory or conversational filler. Output the capsule directly.`;
+5. If any section does not have any meaningful information in the raw transcript (e.g., no code/technical stack is mentioned, or no metrics exist yet), OMIT that section entirely. DO NOT output placeholder text (such as "None reported", "Not mentioned", "Initial stage", etc.) explaining that the information is missing.
+6. **PRESERVE CONVERSATIONAL FLOW & USER CHOICE**: In the 'Task to Continue' section, if the last response in the transcript ends with a question, choice, or request for clarification to the user (e.g., "Would you like me to explain X, Y, or Z?", "Should we implement A or B?"), do NOT formulate it as a command for the AI to start generating all options unilaterally. Instead, frame 'Task to Continue' to instruct the AI to ask the user which option they would like to proceed with, allowing the conversation to resume naturally.
+7. Do not include introductory or conversational filler. Output the capsule directly.`;
   const user = `Capsule name: "${capsuleName || 'Extracted Chat'}"\n\nRaw chat:\n---\n${chatText.slice(0, 32000)}\n---\n\nTransform this into a detailed context capsule that preserves all details, technical code, and state.`;
   if (provider === "anthropic") return callAnthropic(apiKey, system, user);
   if (provider === "groq")      return callGroq(apiKey, system, user);

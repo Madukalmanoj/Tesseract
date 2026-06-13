@@ -81,7 +81,7 @@ function mext(mime) {
 // We sort them by DOM order to preserve conversation sequence.
 
 function findTurns() {
-  const found = [];
+  let found = [];
   const seen  = new Set();
 
   if (PLAT === 'chatgpt') {
@@ -90,7 +90,6 @@ function findTurns() {
         if (!seen.has(el)) { seen.add(el); found.push(el); }
       }
     }
-    if (found.length) return found.sort((a,b) => a.compareDocumentPosition(b) & 4 ? -1 : 1);
   }
 
   else if (PLAT === 'gemini') {
@@ -99,7 +98,6 @@ function findTurns() {
         if (!seen.has(el)) { seen.add(el); found.push(el); }
       }
     }
-    if (found.length) return found.sort((a,b) => a.compareDocumentPosition(b) & 4 ? -1 : 1);
   }
 
   else if (PLAT === 'claude') {
@@ -108,7 +106,6 @@ function findTurns() {
         if (!seen.has(el)) { seen.add(el); found.push(el); }
       }
     }
-    if (found.length) return found.sort((a,b) => a.compareDocumentPosition(b) & 4 ? -1 : 1);
   }
 
   else if (PLAT === 'grok') {
@@ -117,36 +114,44 @@ function findTurns() {
         if (!seen.has(el)) { seen.add(el); found.push(el); }
       }
     }
-    if (found.length) return found.sort((a,b) => a.compareDocumentPosition(b) & 4 ? -1 : 1);
   }
 
   // Strategy 1: Known turn selectors (Fuzzy fallback)
-  const exactSels = [
-    '[data-testid="human-turn"],[data-testid="ai-turn"]',
-    '[data-testid$="-turn"]',
-    '[class*="turn-"][class*="human"],[class*="turn-"][class*="assistant"]',
-    '[class*="MessageContent"],[class*="message-content"]',
-    '[class*="ConversationTurn"],[class*="conversation-turn"]',
-    'user-query, model-response, model-turn, [class*="user-query"], [class*="model-response"], [class*="model-turn"]'
-  ];
-  for (const sel of exactSels) {
-    for (const el of document.querySelectorAll(sel)) {
-      if (!seen.has(el)) { seen.add(el); found.push(el); }
+  if (!found.length) {
+    const exactSels = [
+      '[data-testid="human-turn"],[data-testid="ai-turn"]',
+      '[data-testid$="-turn"]',
+      '[class*="turn-"][class*="human"],[class*="turn-"][class*="assistant"]',
+      '[class*="MessageContent"],[class*="message-content"]',
+      '[class*="ConversationTurn"],[class*="conversation-turn"]',
+      'user-query, model-response, model-turn, [class*="user-query"], [class*="model-response"], [class*="model-turn"]'
+    ];
+    for (const sel of exactSels) {
+      for (const el of document.querySelectorAll(sel)) {
+        if (!seen.has(el)) { seen.add(el); found.push(el); }
+      }
+      if (found.length) break;
     }
-    if (found.length) return found.sort((a,b) => a.compareDocumentPosition(b) & 4 ? -1 : 1);
   }
 
   // Strategy 2: Look for 'sr-only' markers (You said: / Claude responded:)
-  for (const el of document.querySelectorAll('div, span')) {
-    if (el.className && typeof el.className === 'string' && el.className.includes('sr-only')) {
-      const t = el.innerText || el.textContent || '';
-      if (t.includes('You said:') || t.includes('responded:')) {
-         let wrapper = el.parentElement;
-         if (wrapper && !seen.has(wrapper)) { seen.add(wrapper); found.push(wrapper); }
+  if (!found.length) {
+    for (const el of document.querySelectorAll('div, span')) {
+      if (el.className && typeof el.className === 'string' && el.className.includes('sr-only')) {
+        const t = el.innerText || el.textContent || '';
+        if (t.includes('You said:') || t.includes('responded:')) {
+           let wrapper = el.parentElement;
+           if (wrapper && !seen.has(wrapper)) { seen.add(wrapper); found.push(wrapper); }
+        }
       }
     }
   }
-  if (found.length) return found.sort((a,b) => a.compareDocumentPosition(b) & 4 ? -1 : 1);
+
+  // Filter out parent containers (only keep leaf turns)
+  const leaves = found.filter(el => !found.some(other => other !== el && el.contains(other)));
+  if (leaves.length) {
+    return leaves.sort((a,b) => a.compareDocumentPosition(b) & 4 ? -1 : 1);
+  }
 
   // Strategy 3: Nuclear Fallback - Grab the main content area
   const chatArea = document.querySelector('main') || document.body;
@@ -586,6 +591,42 @@ async function extractFiles(turn, store, orgId) {
             if (!r.error) { fd.dataUrl=r.dataUrl; fd.mimeType=r.mimeType; fd.note='✓ claude-api'; break; }
           }
         }
+        add(fd);
+      }
+    }
+  }
+
+  // ── Gemini & Grok / Generic Fallback ──────────────────────────────────────
+  if (PLAT === 'gemini' || PLAT === 'grok' || PLAT === 'unknown') {
+    const chipSels = [
+      '[class*="file-chip" i]', '[class*="attachment" i]', '[class*="file-preview" i]',
+      '[class*="document-chip" i]', '[class*="upload-file" i]', 'a[href*="blob:"]', 'a[download]',
+      'button[aria-label*="file" i]', 'button[aria-label*="attachment" i]',
+      '[class*="file" i]', '[class*="doc" i]', 'div[role="button"]', 'span', 'p', 'a'
+    ];
+    for (const sel of chipSels) {
+      for (const chip of turn.querySelectorAll(sel)) {
+        if (isInsideUI(chip)) continue;
+        const name = chipText(chip);
+        if (!name) continue;
+        const cleanName = name.trim();
+        
+        // For generic elements, require a standard file extension to prevent false positives
+        const hasExt = /\.(pdf|docx?|zip|tar|gz|csv|xlsx?|pptx?|txt|py|json|png|jpe?g|gif|webp|sh|js|html|css|md)$/i.test(cleanName);
+        if (!hasExt) continue;
+        
+        if (isUINoiseFileName(cleanName) || seen.has(cleanName.toLowerCase())) continue;
+        
+        const fd = { name: cleanName, source: PLAT + '-chip', note: 'name only' };
+        
+        // Check store first for intercepted content
+        const stored = fromStore(cleanName, store);
+        if (stored) {
+          fd.dataUrl = stored.dataUrl;
+          fd.mimeType = stored.mimeType;
+          fd.note = '✓ intercepted';
+        }
+        
         add(fd);
       }
     }

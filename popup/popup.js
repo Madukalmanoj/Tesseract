@@ -130,9 +130,12 @@ async function runExtractionFlow(shouldSave = false) {
 
     const capsuleName = $("capNameInput").value.trim() || "Chat Capsule";
 
-    // LLM refine
+    // Check if the chat has any assistant/AI responses
+    const hasAssistant = (extractedData.messages || []).some(m => m.role === 'assistant');
+
+    // LLM refine — only perform if LLM is enabled AND there is actual assistant/AI response history to refine
     let refinedText = null;
-    if (useLLM) {
+    if (useLLM && hasAssistant) {
       showStatus("extractStatus","info",`<span class="spin"></span>Extracting… then refining with ${currentProvider}…`);
       try {
         const chatText = cleanForLLM(buildPlainText(extractedData));
@@ -144,10 +147,22 @@ async function runExtractionFlow(shouldSave = false) {
       }
     }
 
+    // Determine default prompt text (if not LLM-refined)
+    let defaultPromptText;
+    if (!hasAssistant) {
+      // Direct raw user messages without headers/tags for simple single-turn prompts
+      defaultPromptText = (extractedData.messages || [])
+        .map(m => cleanForLLM(m.text))
+        .filter(Boolean)
+        .join('\n\n');
+    } else {
+      defaultPromptText = buildPlainText(extractedData);
+    }
+
     const cap = {
       id: Date.now().toString(),
       name: capsuleName,
-      promptText: refinedText || buildPlainText(extractedData),
+      promptText: refinedText || defaultPromptText,
       rawText: buildPlainText(extractedData),
       images: (extractedData.allImages||[]).filter(i=>i.dataUrl),
       files: (extractedData.allFiles||[]),
@@ -424,17 +439,26 @@ function buildPlainText(data) {
 
 // Clean extracted text before sending to LLM for refinement
 function cleanForLLM(rawText) {
-  const lines = rawText.split('\n');
+  if (!rawText) return '';
+  
+  // 1. Strip out inline UI warnings and timestamps that might be glued to the text
+  let processed = rawText
+    // Timestamps like 7:42 PM or 12:30 AM (also strip if glued to text like page7:42 PM)
+    .replace(/\b\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)\b/g, '')
+    // Interrupted message
+    .replace(/Claude's response was interrupted\.?/gi, '')
+    // Claude availability banner (specifically handling variations like Claude Fable 5 is currently unavailable.Learn more)
+    .replace(/Claude\s+[Ff]able\s+\d+\s+is\s+currently\s+unavailable\.?\s*Learn\s+more(?:\(opens\s+in\s+new\s+tab\))?/gi, '')
+    .replace(/Claude\s+[Ff]able\s+\d+\s+is\s+currently\s+unavailable\.?\s*Learn\s+more/gi, '')
+    .replace(/Claude is AI and can make mistakes\. Please double-check responses\.?/gi, '')
+    // Generic out of free messages
+    .replace(/You are out of free messages until [0-9: AM|PM|am|pm\s]+Upgrade/gi, '');
+
+  const lines = processed.split('\n');
   const cleaned = [];
   const seenBlocks = new Set();
 
   for (let line of lines) {
-    // Strip out inline UI warnings that might be glued to the end of real text paragraphs
-    line = line.replace(/Claude's response was interrupted\.?/i, '');
-    line = line.replace(/You are out of free messages until [0-9: AM]+PMUpgrade/i, '');
-    line = line.replace(/Claude Fable \d is currently unavailable\.?Learn more\(opens in new tab\)/i, '');
-    line = line.replace(/Claude is AI and can make mistakes\. Please double-check responses\.?/i, '');
-    
     const t = line.trim();
     if (!t) continue;
 

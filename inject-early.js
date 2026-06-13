@@ -216,6 +216,15 @@
             window.__cep.urlMap[dlUrl] = fname;
             // Also without query string
             try { window.__cep.urlMap[new URL(dlUrl).origin + new URL(dlUrl).pathname] = fname; } catch(_) {}
+            
+            // Check if we already captured a file for this download URL under a generic name
+            for (const [k, v] of Object.entries(window.__cep.files)) {
+              if (v.url === dlUrl || (v.url && dlUrl && v.url.split('?')[0] === dlUrl.split('?')[0])) {
+                save(fname, v.dataUrl, v.mimeType, v.url);
+                delete window.__cep.files[k];
+                console.log("[CEP] Late-registered and renamed generic file to:", fname);
+              }
+            }
           }
         }).catch(_=>{});
         return resp; // don't capture this JSON as a file
@@ -255,6 +264,30 @@
       if (this.readyState!==4||this.status<200||this.status>=300) return;
       try {
         const url = this.__cepUrl||'';
+
+        // Intercept ChatGPT /download metadata via XHR
+        if (/\/backend-api\/files\/[^/?]+\/download/.test(url)) {
+          try {
+            const d = JSON.parse(this.responseText);
+            const fname = d.file_name || d.fileName || d.filename || d.name || null;
+            const dlUrl = d.download_url || d.downloadUrl || d.url || null;
+            if (fname && dlUrl) {
+              window.__cep.urlMap[dlUrl] = fname;
+              try { window.__cep.urlMap[new URL(dlUrl).origin + new URL(dlUrl).pathname] = fname; } catch(_) {}
+              
+              // Late rename generic files
+              for (const [k, v] of Object.entries(window.__cep.files)) {
+                if (v.url === dlUrl || (v.url && dlUrl && v.url.split('?')[0] === dlUrl.split('?')[0])) {
+                  save(fname, v.dataUrl, v.mimeType, v.url);
+                  delete window.__cep.files[k];
+                  console.log("[CEP] XHR late-registered and renamed generic file to:", fname);
+                }
+              }
+            }
+          } catch(_) {}
+          return;
+        }
+
         let ct=''; try{ct=this.getResponseHeader('content-type')||'';}catch(_){}
         if (!isCapture(url,ct)) return;
         let blob=null;
