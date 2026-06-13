@@ -302,8 +302,18 @@ async function extractImages(turn) {
     const src = img.src || '';
     if (!src||src.startsWith('data:image/svg')) continue;
     if (img.getAttribute('aria-hidden')==='true') continue;
+
+    // Skip avatar and profile picture elements
+    if (img.closest('[class*="avatar" i], [class*="profile" i], [class*="user-image" i]')) continue;
+    if (img.className && typeof img.className === 'string' && (img.className.includes('avatar') || img.className.includes('profile'))) continue;
+
     const sl = src.toLowerCase();
     if (sl.includes('/favicon')||sl.includes('/_next/')||sl.includes('/icons/')) continue;
+
+    // Skip Google Account profile photos (avatars)
+    if (sl.includes('googleusercontent.com') && (sl.includes('avatar') || sl.includes('/gg/') || sl.match(/=s\d+/))) continue;
+    if (sl.includes('google.com') && (sl.includes('avatar') || sl.includes('/gg/') || sl.match(/=s\d+/))) continue;
+
     const nw=img.naturalWidth, nh=img.naturalHeight;
     if (nw>0&&nh>0&&nw<24&&nh<24) continue;
     // Skip avatars on non-upload URLs

@@ -25,7 +25,16 @@
     "https://gemini.google.com/*",
     "https://grok.com/*",
     "https://*.grok.com/*",
-    "https://*.googleusercontent.com/*"
+    "https://*.google.com/*",
+    "https://lh3.google.com/*",
+    "https://lh4.google.com/*",
+    "https://lh5.google.com/*",
+    "https://lh6.google.com/*",
+    "https://*.googleusercontent.com/*",
+    "https://lh3.googleusercontent.com/*",
+    "https://lh4.googleusercontent.com/*",
+    "https://lh5.googleusercontent.com/*",
+    "https://lh6.googleusercontent.com/*"
   ],
   "action": {
     "default_popup": "popup/popup.html",
