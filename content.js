@@ -806,7 +806,6 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
 
   return files;
 }
-}
 
 function chipText(el) {
   const al = el.getAttribute('aria-label')||el.title||'';
