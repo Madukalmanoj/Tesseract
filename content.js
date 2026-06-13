@@ -310,10 +310,6 @@ async function extractImages(turn) {
     const sl = src.toLowerCase();
     if (sl.includes('/favicon')||sl.includes('/_next/')||sl.includes('/icons/')) continue;
 
-    // Skip Google Account profile photos (avatars)
-    if (sl.includes('googleusercontent.com') && (sl.includes('avatar') || sl.includes('/gg/') || sl.match(/=s\d+/))) continue;
-    if (sl.includes('google.com') && (sl.includes('avatar') || sl.includes('/gg/') || sl.match(/=s\d+/))) continue;
-
     const nw=img.naturalWidth, nh=img.naturalHeight;
     if (nw>0&&nh>0&&nw<24&&nh<24) continue;
     // Skip avatars on non-upload URLs
