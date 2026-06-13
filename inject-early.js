@@ -109,10 +109,34 @@
       for (let i = 0; i < obj.length; i++) scanJsonForFiles(obj[i]);
       return;
     }
-    const id = obj.id || obj.fileId || obj.file_id || obj.file_uuid || obj.uuid ||
-               obj.attachment_id || obj.attachmentId || obj.asset_pointer || obj.assetPointer || null;
+    
+    // Gather all potential ID field values
+    const possibleIds = [
+      obj.file_id, obj.fileId, obj.file_uuid, obj.attachment_id, obj.attachmentId, obj.asset_pointer, obj.assetPointer,
+      obj.id, obj.uuid
+    ];
+    
+    // 1. Prefer values that start with 'file-' (true OpenAI download file IDs)
+    let id = null;
+    for (const val of possibleIds) {
+      if (typeof val === 'string' && val.startsWith('file-')) {
+        id = val;
+        break;
+      }
+    }
+    // 2. Fallback to any truthy ID value
+    if (!id) {
+      for (const val of possibleIds) {
+        if (val) {
+          id = val;
+          break;
+        }
+      }
+    }
+
     const name = obj.name || obj.filename || obj.file_name || obj.original_filename || obj.original_name ||
                  obj.title || obj.original_title || obj.originalTitle || null;
+                 
     const isFileId = (typeof id === 'string') && (id.startsWith('file-') || /^[a-f0-9-]{36}$/.test(id));
     if (isFileId && typeof name === 'string' && name.includes('.')) {
       window.__cep.idMap[id] = name;
