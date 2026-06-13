@@ -53,7 +53,24 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
 
 // ── Fetch any URL as base64 ───────────────────────────────────────────────────
 async function fetchAsBase64(url) {
-  const res = await fetch(url, { credentials: "include" });
+  let res;
+  try {
+    // Try with credentials for authenticated endpoints (Claude/ChatGPT private files)
+    res = await fetch(url, { credentials: "include" });
+  } catch(e) {
+    // Fallback without credentials for external CDN images
+    res = await fetch(url);
+  }
+
+  // If response is not ok or was blocked by CORS, retry without credentials
+  if (!res || !res.ok) {
+    try {
+      res = await fetch(url);
+    } catch(e) {
+      throw new Error("HTTP fetch failed: " + e.message);
+    }
+  }
+
   if (!res.ok) throw new Error("HTTP " + res.status + " for " + url);
   const buffer = await res.arrayBuffer();
   const bytes = new Uint8Array(buffer);

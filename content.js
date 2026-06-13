@@ -102,6 +102,7 @@ function findTurns() {
     '[class*="turn-"][class*="human"],[class*="turn-"][class*="assistant"]',
     '[class*="MessageContent"],[class*="message-content"]',
     '[class*="ConversationTurn"],[class*="conversation-turn"]',
+    'user-query, model-turn, [class*="user-query"], [class*="model-turn"]'
   ];
   for (const sel of exactSels) {
     for (const el of document.querySelectorAll(sel)) {
@@ -168,6 +169,11 @@ function isUINoiseText(text) {
 
 // ── Role detection ────────────────────────────────────────────────────────────
 function getRole(turn) {
+  // Gemini tags
+  const tag = turn.tagName?.toLowerCase();
+  if (tag === 'user-query') return 'user';
+  if (tag === 'model-turn') return 'assistant';
+
   // ChatGPT
   const gptRole = turn.getAttribute('data-message-author-role') ||
                   turn.querySelector('[data-message-author-role]')
@@ -533,8 +539,8 @@ async function dropCapsule(cap) {
   // ── 3. Inject files ───────────────────────────────────────────────────────
   let injected = false;
 
-  // Strategy A: find hidden file input and set files directly (ChatGPT primary)
-  if (PLAT === 'chatgpt') {
+  // Strategy A: find hidden file input and set files directly (universal primary)
+  if (PLAT === 'chatgpt' || PLAT === 'gemini' || PLAT === 'grok' || PLAT === 'claude') {
     const fileInputs = document.querySelectorAll('input[type="file"]');
     for (const fi of fileInputs) {
       try {
