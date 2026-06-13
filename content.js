@@ -956,9 +956,21 @@ async function extractAll() {
 
 // ── File drop injection ───────────────────────────────────────────────────────
 function dataUrlToFile(dataUrl, name) {
-  const arr=dataUrl.split(','), mime=arr[0].match(/:(.*?);/)[1];
-  const bytes=Uint8Array.from(atob(arr[1]),c=>c.charCodeAt(0));
-  return new File([bytes], name, {type:mime||'application/octet-stream'});
+  try {
+    const arr = dataUrl.split(',');
+    const mimeMatch = arr[0].match(/:(.*?);/);
+    const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new File([u8arr], name, { type: mime });
+  } catch (e) {
+    console.error('[CEP] Error converting dataUrl to file:', e);
+    return null;
+  }
 }
 
 async function dropCapsule(cap) {
@@ -992,11 +1004,15 @@ async function dropCapsule(cap) {
     try {
       const mime=img.dataUrl.split(',')[0].match(/:(.*?);/)[1];
       const ext=mime.split('/')[1]?.split(';')[0]||'jpg';
-      allFiles.push(dataUrlToFile(img.dataUrl,`image_${++ii}.${ext}`));
+      const fileObj = dataUrlToFile(img.dataUrl,`image_${++ii}.${ext}`);
+      if (fileObj) allFiles.push(fileObj);
     } catch(e) { console.warn('[CEP] Bad image dataUrl:', e); }
   }
   for (const f of (cap.files||[]).filter(f=>f.dataUrl)) {
-    try { allFiles.push(dataUrlToFile(f.dataUrl, f.name)); } catch(e) { console.warn('[CEP] Bad file dataUrl:', e); }
+    try {
+      const fileObj = dataUrlToFile(f.dataUrl, f.name);
+      if (fileObj) allFiles.push(fileObj);
+    } catch(e) { console.warn('[CEP] Bad file dataUrl:', e); }
   }
 
   if (!allFiles.length) { toast(`💊 "${cap.name}" dropped!`); return; }

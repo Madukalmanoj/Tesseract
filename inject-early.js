@@ -10,12 +10,36 @@
 
   const IS_CLAUDE = window.location.hostname.includes('claude.ai');
 
-  function b64(blob) {
-    return new Promise((ok,fail) => {
-      const r = new FileReader();
-      r.onload = () => ok(r.result);
-      r.onerror = fail;
-      r.readAsDataURL(blob);
+  function toDataUrl(bufferOrBlob, ct) {
+    return new Promise(async (ok, fail) => {
+      try {
+        let u8arr;
+        if (bufferOrBlob instanceof Blob) {
+          const buffer = await bufferOrBlob.arrayBuffer();
+          u8arr = new Uint8Array(buffer);
+        } else if (bufferOrBlob instanceof ArrayBuffer) {
+          u8arr = new Uint8Array(bufferOrBlob);
+        } else if (typeof bufferOrBlob === 'string') {
+          const len = bufferOrBlob.length;
+          u8arr = new Uint8Array(len);
+          for (let i = 0; i < len; i++) {
+            u8arr[i] = bufferOrBlob.charCodeAt(i) & 0xff;
+          }
+        } else {
+          fail(new Error('Unsupported type'));
+          return;
+        }
+        
+        let binary = '';
+        const chunk = 8192;
+        for (let i = 0; i < u8arr.length; i += chunk) {
+          const sub = u8arr.subarray(i, i + chunk);
+          binary += String.fromCharCode.apply(null, sub);
+        }
+        ok('data:' + (ct || 'application/octet-stream') + ';base64,' + btoa(binary));
+      } catch (e) {
+        fail(e);
+      }
     });
   }
 
@@ -301,16 +325,16 @@
       // 3. Skip non-file responses
       if (!isCapture(url, ct)) return resp;
 
-      // 4. Capture blob file content
-      resp.clone().blob().then(async blob => {
-        if (blob.size < 100) return;
-        const dataUrl = await b64(blob);
+      // 4. Capture arrayBuffer file content
+      resp.clone().arrayBuffer().then(async buffer => {
+        if (buffer.byteLength < 100) return;
+        const dataUrl = await toDataUrl(buffer, ct);
         let name = getName(url);
         if (!name) {
           const idM = url.match(/file-([a-zA-Z0-9]{8})/);
-          name = idM ? ('file_'+idM[1]+'.'+mext(ct||blob.type)) : ('file.'+mext(ct||blob.type));
+          name = idM ? ('file_'+idM[1]+'.'+mext(ct)) : ('file.'+mext(ct));
         }
-        save(name, dataUrl, ct||blob.type, url);
+        save(name, dataUrl, ct, url);
       }).catch(_=>{});
     } catch(_) {}
 
@@ -365,22 +389,17 @@
         }
 
         if (!isCapture(url,ct)) return;
-        let blob=null;
-        if (this.response instanceof Blob) blob=this.response;
-        else if (this.response instanceof ArrayBuffer) blob=new Blob([this.response],{type:ct});
-        else if (typeof this.response==='string'&&this.response.length>100) {
-          const len = this.response.length;
-          const u8arr = new Uint8Array(len);
-          for (let i = 0; i < len; i++) {
-            u8arr[i] = this.response.charCodeAt(i) & 0xff;
+        const respData = this.response;
+        if (!respData) return;
+        toDataUrl(respData, ct).then(dataUrl => {
+          const base64Part = dataUrl.split(',')[1] || '';
+          if (base64Part.length < 100) return;
+          let name = getName(url);
+          if (!name) {
+            const idM = url.match(/file-([a-zA-Z0-9]{8})/);
+            name = idM ? ('file_'+idM[1]+'.'+mext(ct)) : ('file.'+mext(ct));
           }
-          blob = new Blob([u8arr],{type:ct});
-        }
-        if (!blob||blob.size<100) return;
-        b64(blob).then(dataUrl=>{
-          let name=getName(url);
-          if (!name) { const idM=url.match(/file-([a-zA-Z0-9]{8})/); name=idM?('file_'+idM[1]+'.'+mext(ct||blob.type)):('file.'+mext(ct||blob.type)); }
-          save(name,dataUrl,ct||blob.type,url);
+          save(name, dataUrl, ct, url);
         }).catch(_=>{});
       } catch(_) {}
     });
