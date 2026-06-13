@@ -53,6 +53,19 @@
   function save(name, dataUrl, mime, url) {
     if (!name || !dataUrl) return;
     const k = name.toLowerCase().trim();
+    
+    // Guard rail: prevent saving HTML/JSON response content as binary files (e.g. PDF, ZIP, DOCX, images, etc.)
+    const ct = (mime || '').toLowerCase();
+    const isHtmlOrJson = ct.includes('json') || ct.includes('html');
+    if (isHtmlOrJson) {
+      const ext = k.split('.').pop();
+      const binaryExts = ['pdf', 'zip', 'docx', 'xlsx', 'pptx', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bin'];
+      if (binaryExts.includes(ext)) {
+        console.warn(`[CEP] Refusing to save HTML/JSON response as binary file: ${name} (MIME: ${mime}, URL: ${url})`);
+        return;
+      }
+    }
+
     const e = {dataUrl, mimeType: mime||'application/octet-stream', filename: name, url};
     window.__cep.files[k] = e;
     const noext = k.replace(/\.[^.]+$/,'');
@@ -167,6 +180,10 @@
 
   function isCapture(url, ct) {
     const u = url.toLowerCase(), c = (ct||'').toLowerCase();
+    
+    // Ignore API metadata/download JSON endpoints (not actual file binaries)
+    if (u.includes('/backend-api/files/file-')) return false;
+
     const fileUrl = u.includes('oaiusercontent') || u.includes('estuary') ||
       u.includes('/files/') || u.includes('file-service') ||
       u.includes('blob.core.windows') || u.includes('storage.googleapis') ||
