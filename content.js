@@ -389,6 +389,18 @@ function resolveImageSrc(img) {
     }
   }
 
+  // assets.grok.com upscaling
+  if (sl.includes('assets.grok.com')) {
+    // Remove thumbnail suffixes from filename (e.g. -thumb, _thumb, -small, _small)
+    src = src.replace(/[-_](thumb|thumbnail|small|medium|preview)\b/gi, '');
+    // Remove trailing size paths (e.g. /thumb)
+    src = src.replace(/\/(thumb|thumbnail|small|medium|preview)$/i, '');
+    // Remove query parameters that resize or compress
+    src = src.replace(/[?&](width|height|size|w|h|fit|quality)=\w+/gi, '');
+    // Clean up trailing ? or &
+    src = src.replace(/[?&]$/, '');
+  }
+
   // Bypass Cloudflare cdn-cgi image resizing to fetch the raw original image
   if (src.includes('/cdn-cgi/image/')) {
     const match = src.match(/(https?:\/\/[^\/]+)?\/cdn-cgi\/image\/[^\/]+\/(.*)/i);
