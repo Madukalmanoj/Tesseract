@@ -885,6 +885,7 @@ async function extractAll() {
 
   const orgId = PLAT==='claude' ? getOrgId() : null;
   const {files:store, authHeader, idMap} = await getStore();
+  console.log("[CEP] extractAll - Store keys:", Object.keys(store || {}), "hasAuth:", !!authHeader, "idMap:", idMap);
   
   // On ChatGPT, programmatically fetch all missing files via background service worker (safely bypassing CSP/CORS)
   if (PLAT === 'chatgpt' && authHeader && idMap) {

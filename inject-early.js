@@ -14,6 +14,7 @@
   XMLHttpRequest.prototype.setRequestHeader = function(header, value) {
     if (header && header.toLowerCase() === 'authorization') {
       window.__cep.authHeader = value;
+      console.log("[CEP] Captured XHR Authorization header:", value.slice(0, 20) + "...");
     }
     return _xsetHeader.apply(this, [header, value]);
   };
@@ -293,14 +294,23 @@
       if (opts.headers instanceof Headers) {
         auth = opts.headers.get('Authorization') || opts.headers.get('authorization');
       } else {
-        auth = opts.headers['Authorization'] || opts.headers['authorization'];
+        for (const [hk, hv] of Object.entries(opts.headers)) {
+          if (hk.toLowerCase() === 'authorization') { auth = hv; break; }
+        }
       }
     }
     if (!auth && req instanceof Request && req.headers) {
-      auth = req.headers.get('Authorization') || req.headers.get('authorization');
+      if (req.headers instanceof Headers) {
+        auth = req.headers.get('Authorization') || req.headers.get('authorization');
+      } else {
+        for (const [hk, hv] of Object.entries(req.headers)) {
+          if (hk.toLowerCase() === 'authorization') { auth = hv; break; }
+        }
+      }
     }
     if (auth) {
       window.__cep.authHeader = auth;
+      console.log("[CEP] Captured fetch Authorization header:", auth.slice(0, 20) + "...");
     }
 
     // org ID
@@ -454,11 +464,14 @@
 
   // Event API
   window.addEventListener('__cepQuery', async () => {
+    console.log("[CEP] __cepQuery event received. authHeader:", !!window.__cep.authHeader);
+    
     // 1. Try to fetch conversation history if authHeader is available and we are on a chatgpt conversation page
     if (window.__cep.authHeader && window.location.hostname.includes('chatgpt.com')) {
       const match = window.location.pathname.match(/\/c\/([a-f0-9-]{36})/);
       if (match) {
         const convId = match[1];
+        console.log("[CEP] __cepQuery: Fetching conversation tree for:", convId);
         try {
           const res = await _fetch(`/backend-api/conversation/${convId}`, {
             headers: {
@@ -466,16 +479,21 @@
               'accept': 'application/json'
             }
           });
+          console.log("[CEP] __cepQuery: Conversation tree fetch status:", res.status);
           if (res.ok) {
             const data = await res.json();
             scanJsonForFiles(data);
+            console.log("[CEP] __cepQuery: Parsed tree. idMap size:", Object.keys(window.__cep.idMap).length);
           }
         } catch(e) {
           console.warn("[CEP] On-demand conversation fetch failed:", e);
         }
+      } else {
+        console.log("[CEP] __cepQuery: Path does not match conversation UUID:", window.location.pathname);
       }
     }
     
+    console.log("[CEP] __cepQuery: Dispatching __cepReply. Store files size:", Object.keys(window.__cep.files).length);
     window.dispatchEvent(new CustomEvent('__cepReply', {
       detail: {
         files: window.__cep.files,
