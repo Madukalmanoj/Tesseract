@@ -889,13 +889,16 @@ async function extractAll() {
   
   // On ChatGPT, programmatically fetch all missing files via background service worker (safely bypassing CSP/CORS)
   if (PLAT === 'chatgpt' && authHeader && idMap) {
+    const cMatch = location.pathname.match(/\/c\/([a-f0-9-]{36})/);
+    const conversationId = cMatch ? cMatch[1] : null;
+    
     for (const [fileId, filename] of Object.entries(idMap)) {
       const k = filename.toLowerCase().trim();
       // If we don't have the file binary yet (or it has no dataUrl)
       if (!store[k] || !store[k].dataUrl) {
-        console.log("[CEP] Background fetching missing file:", filename, fileId);
+        console.log("[CEP] Background fetching missing file:", filename, fileId, "convId:", conversationId);
         try {
-          const r = await bg('fetchChatGPTFile', { fileId, authHeader });
+          const r = await bg('fetchChatGPTFile', { fileId, authHeader, conversationId });
           if (r && !r.error && r.dataUrl) {
             const fileEntry = {
               dataUrl: r.dataUrl,

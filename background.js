@@ -19,7 +19,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     return true;
   }
   if (req.action === "fetchChatGPTFile") {
-    fetchChatGPTFile(req.fileId, req.authHeader).then(sendResponse).catch(e => sendResponse({ error: e.message }));
+    fetchChatGPTFile(req.fileId, req.authHeader, req.conversationId).then(sendResponse).catch(e => sendResponse({ error: e.message }));
     return true;
   }
   if (req.action === "llmRefine") {
@@ -164,13 +164,17 @@ function filenameFromUrl(urlStr) {
 // Response shape from /backend-api/files/{id}/download:
 // { status:"success", file_name:"foo.docx", file_size_bytes:1234,
 //   download_url:"https://chatgpt.com/backend-api/estuary/content?...", ... }
-async function fetchChatGPTFile(fileId, authHeader) {
+async function fetchChatGPTFile(fileId, authHeader, conversationId) {
   // Step 1: get signed download URL + filename from download endpoint
+  let url = "https://chatgpt.com/backend-api/files/" + fileId + "/download";
+  if (conversationId) {
+    url += "?conversation_id=" + conversationId;
+  }
   const headers = { "accept": "application/json" };
   if (authHeader) {
     headers["Authorization"] = authHeader;
   }
-  const dlRes = await fetch("https://chatgpt.com/backend-api/files/" + fileId + "/download", {
+  const dlRes = await fetch(url, {
     credentials: "include",
     headers
   });
