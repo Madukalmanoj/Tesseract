@@ -56,12 +56,13 @@ async function fetchAsBase64(url) {
   let res;
 
   // Custom fallback sequence for assets.grok.com
-  if (url.includes('assets.grok.com') && url.endsWith('/original-image')) {
+  if (url.includes('assets.grok.com') && url.endsWith('/content')) {
     const urlsToTry = [
-      url, // /original-image
-      url.replace(/\/original-image$/, '/original'),
-      url.replace(/\/original-image$/, '/image'),
-      url.replace(/\/original-image$/, '/preview-image')
+      url, // /content
+      url.replace(/\/content$/, '/original-image'),
+      url.replace(/\/content$/, '/original'),
+      url.replace(/\/content$/, '/image'),
+      url.replace(/\/content$/, '/preview-image')
     ];
 
     for (let i = 0; i < urlsToTry.length; i++) {
