@@ -304,13 +304,41 @@ function isUINoiseFileName(name) {
   return false;
 }
 
-// Resolve real image URL (handles lazy loading data attributes)
+// Resolve real image URL (handles lazy loading data attributes and upscales CDN paths)
 function resolveImageSrc(img) {
+  let src = '';
   for (const attr of ['data-src', 'data-zoom', 'data-original-src', 'original-src', 'data-hero-src', 'data-image-url']) {
     const val = img.getAttribute(attr);
-    if (val && (val.startsWith('http') || val.startsWith('blob:') || val.startsWith('data:'))) return val;
+    if (val && (val.startsWith('http') || val.startsWith('blob:') || val.startsWith('data:'))) {
+      src = val;
+      break;
+    }
   }
-  return img.src || '';
+  if (!src) src = img.src || '';
+
+  // Upscale Twitter/X CDN image URLs to original resolution
+  const sl = src.toLowerCase();
+  if (sl.includes('twimg.com') || sl.includes('x.com')) {
+    if (src.includes('name=')) {
+      src = src.replace(/name=[a-zA-Z0-9_]+/gi, 'name=orig');
+    }
+  }
+
+  // Bypass Cloudflare cdn-cgi image resizing to fetch the raw original image
+  if (src.includes('/cdn-cgi/image/')) {
+    const match = src.match(/(https?:\/\/[^\/]+)?\/cdn-cgi\/image\/[^\/]+\/(.*)/i);
+    if (match) {
+      const origin = match[1] || '';
+      const rest = match[2];
+      if (rest.startsWith('http://') || rest.startsWith('https://')) {
+        src = rest;
+      } else {
+        src = (origin || new URL(src).origin) + '/' + rest;
+      }
+    }
+  }
+
+  return src;
 }
 
 // ── Extract images from a turn (bg proxy for CORS) ──────────────────────────
