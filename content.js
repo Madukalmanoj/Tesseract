@@ -319,24 +319,21 @@ async function extractImages(turn) {
   const allImgs = turn.querySelectorAll('img');
   console.log('[CEP] Found', allImgs.length, 'total images in turn');
   for (const img of allImgs) {
-    if (isInsideUI(img)) { console.log('[CEP] Skipped: inside UI'); continue; }
-    
+    const src = resolveImageSrc(img);
+    const sl = src.toLowerCase();
+
     // Log all attributes of the img element to the console for debugging
     const attrs = {};
     for (const attr of img.attributes) {
       attrs[attr.name] = attr.value;
     }
     console.log('[CEP] Image elements attributes:', JSON.stringify(attrs));
-
-    const src = resolveImageSrc(img);
     console.log('[CEP] Resolved Image src:', src);
+
     if (!src||src.startsWith('data:image/svg')) { console.log('[CEP] Skipped: empty or svg'); continue; }
     if (img.getAttribute('aria-hidden')==='true') { console.log('[CEP] Skipped: aria-hidden'); continue; }
 
-    const sl = src.toLowerCase();
-
     // Skip avatar and profile picture elements (bypass for known uploaded/preview chat images)
-    let isAvatar = false;
     const isUploadedImg = img.getAttribute('data-test-id') === 'uploaded-img' || 
                           (img.className && typeof img.className === 'string' && img.className.includes('preview-image')) ||
                           (sl.includes('twimg.com') && !sl.includes('profile_images')) ||
@@ -346,7 +343,16 @@ async function extractImages(turn) {
                             sl.includes('twimg.com') ||
                             (sl.includes('x.com') && !sl.includes('profile_images') && !sl.includes('avatar')) ||
                             (sl.includes('grok.com') && !sl.includes('avatar') && !sl.includes('profile') && !sl.includes('logo') && !sl.includes('favicon'))
-                          ));
+                          )) ||
+                          // Additional generic upload URL checks:
+                          sl.includes('blob:') || sl.includes('/files/') || sl.includes('oaiusercontent') ||
+                          sl.includes('upload') || sl.includes('/api/organizations/') || sl.includes('fileuploads') ||
+                          sl.includes('googleusercontent');
+
+    // Skip UI elements only if they are not known uploaded/chat images
+    if (!isUploadedImg && isInsideUI(img)) { console.log('[CEP] Skipped: inside UI'); continue; }
+
+    let isAvatar = false;
     if (!isUploadedImg) {
       isAvatar = img.closest('[class*="avatar" i], [class*="profile-pic" i], [class*="profile-img" i]') ||
                  (img.className && typeof img.className === 'string' && (img.className.includes('avatar') || img.className.includes('profile-pic') || img.className.includes('profile-img')));
