@@ -589,6 +589,7 @@ async function dropCapsule(cap) {
         fi.dispatchEvent(new Event('input',  { bubbles: true }));
         injected = true;
         await new Promise(r => setTimeout(r, 150));
+        break; // Break on first successful injection to prevent duplicate uploads
       } catch(e) {
         console.warn('[CEP] Strategy A file input injection failed:', fi, e);
       }
@@ -736,9 +737,9 @@ async function checkPendingTransfer() {
                          (transfer.capsule.files && transfer.capsule.files.length > 0);
         if (hasFiles && !document.querySelector('input[type="file"]')) {
           attempts++;
-          if (attempts >= maxAttempts) {
+          if (attempts >= 15) { // 3 seconds timeout (15 * 200ms) for file input to appear
             clearInterval(interval);
-            console.warn("[CEP] Text input found, but file input not found after timeout. Proceeding with text only.");
+            console.warn("[CEP] Text input found, but file input not found after 3 seconds. Proceeding to drop capsule anyway.");
             dropCapsule(transfer.capsule);
           }
           return; // Keep waiting for file input
