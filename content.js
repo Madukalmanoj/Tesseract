@@ -81,21 +81,46 @@ function mext(mime) {
 // We sort them by DOM order to preserve conversation sequence.
 
 function findTurns() {
+  const found = [];
+  const seen  = new Set();
+
   if (PLAT === 'chatgpt') {
-    const found = [];
-    const seen  = new Set();
     for (const s of ['article[data-testid]','[data-message-id]']) {
       for (const el of document.querySelectorAll(s)) {
         if (!seen.has(el)) { seen.add(el); found.push(el); }
       }
     }
-    return found;
+    if (found.length) return found.sort((a,b) => a.compareDocumentPosition(b) & 4 ? -1 : 1);
   }
 
-  const found = [];
-  const seen  = new Set();
+  else if (PLAT === 'gemini') {
+    for (const s of ['user-query', 'model-turn', '[class*="user-query"]', '[class*="model-turn"]']) {
+      for (const el of document.querySelectorAll(s)) {
+        if (!seen.has(el)) { seen.add(el); found.push(el); }
+      }
+    }
+    if (found.length) return found.sort((a,b) => a.compareDocumentPosition(b) & 4 ? -1 : 1);
+  }
 
-  // Strategy 1: Known turn selectors
+  else if (PLAT === 'claude') {
+    for (const s of ['[data-testid="human-turn"]', '[data-testid="ai-turn"]', '[data-testid$="-turn"]']) {
+      for (const el of document.querySelectorAll(s)) {
+        if (!seen.has(el)) { seen.add(el); found.push(el); }
+      }
+    }
+    if (found.length) return found.sort((a,b) => a.compareDocumentPosition(b) & 4 ? -1 : 1);
+  }
+
+  else if (PLAT === 'grok') {
+    for (const s of ['[data-testid="messageEntry"]', '[class*="messageEntry"]', 'article', '[class*="MessageContent"]', '[class*="message-content"]']) {
+      for (const el of document.querySelectorAll(s)) {
+        if (!seen.has(el)) { seen.add(el); found.push(el); }
+      }
+    }
+    if (found.length) return found.sort((a,b) => a.compareDocumentPosition(b) & 4 ? -1 : 1);
+  }
+
+  // Strategy 1: Known turn selectors (Fuzzy fallback)
   const exactSels = [
     '[data-testid="human-turn"],[data-testid="ai-turn"]',
     '[data-testid$="-turn"]',
@@ -124,8 +149,6 @@ function findTurns() {
   if (found.length) return found.sort((a,b) => a.compareDocumentPosition(b) & 4 ? -1 : 1);
 
   // Strategy 3: Nuclear Fallback - Grab the main content area
-  // If we can't detect individual turns, treat the entire conversation column as a single turn.
-  // extractText() will pull all text cleanly, and extractImages/Files will grab everything.
   const chatArea = document.querySelector('main') || document.body;
   return [chatArea];
 }
@@ -169,7 +192,14 @@ function isUINoiseText(text) {
 
 // ── Role detection ────────────────────────────────────────────────────────────
 function getRole(turn) {
-  // Gemini tags
+  // Gemini tags or classes
+  if (PLAT === 'gemini') {
+    const tag = turn.tagName?.toLowerCase();
+    if (tag === 'user-query' || turn.classList?.contains('user-query') || turn.closest('user-query') || turn.className?.includes?.('user-query')) return 'user';
+    if (tag === 'model-turn' || turn.classList?.contains('model-turn') || turn.closest('model-turn') || turn.className?.includes?.('model-turn')) return 'assistant';
+  }
+
+  // Gemini tags fallback (non-Gemini platforms)
   const tag = turn.tagName?.toLowerCase();
   if (tag === 'user-query') return 'user';
   if (tag === 'model-turn') return 'assistant';
@@ -541,7 +571,15 @@ async function dropCapsule(cap) {
 
   // Strategy A: find hidden file input and set files directly (universal primary)
   if (PLAT === 'chatgpt' || PLAT === 'gemini' || PLAT === 'grok' || PLAT === 'claude') {
-    const fileInputs = document.querySelectorAll('input[type="file"]');
+    // Find composer container first to narrow down file input selection
+    const composer = document.querySelector('form') || 
+                     input.closest('[class*="composer" i],[class*="Composer" i],[class*="input" i],[class*="Input" i]') ||
+                     document.body;
+    let fileInputs = Array.from(composer.querySelectorAll('input[type="file"]'));
+    if (fileInputs.length === 0) {
+      fileInputs = Array.from(document.querySelectorAll('input[type="file"]'));
+    }
+
     for (const fi of fileInputs) {
       try {
         const dt = new DataTransfer();
@@ -550,9 +588,10 @@ async function dropCapsule(cap) {
         fi.dispatchEvent(new Event('change', { bubbles: true }));
         fi.dispatchEvent(new Event('input',  { bubbles: true }));
         injected = true;
-        await new Promise(r => setTimeout(r, 100));
-        break;
-      } catch(_) {}
+        await new Promise(r => setTimeout(r, 150));
+      } catch(e) {
+        console.warn('[CEP] Strategy A file input injection failed:', fi, e);
+      }
     }
   }
 
@@ -692,12 +731,25 @@ async function checkPendingTransfer() {
       const inputSel = (SEL[PLAT]||SEL.claude).input;
       const input = document.querySelector(inputSel);
       if (input) {
+        // If the capsule contains files, verify if we should wait for file input to appear
+        const hasFiles = (transfer.capsule.images && transfer.capsule.images.length > 0) || 
+                         (transfer.capsule.files && transfer.capsule.files.length > 0);
+        if (hasFiles && !document.querySelector('input[type="file"]')) {
+          attempts++;
+          if (attempts >= maxAttempts) {
+            clearInterval(interval);
+            console.warn("[CEP] Text input found, but file input not found after timeout. Proceeding with text only.");
+            dropCapsule(transfer.capsule);
+          }
+          return; // Keep waiting for file input
+        }
+
         clearInterval(interval);
-        console.log("[CEP] Pending transfer found, waiting 1.5s for editor to initialize event listeners...");
+        console.log("[CEP] Pending transfer found, waiting 3.0s for editor to initialize event listeners...");
         setTimeout(() => {
           console.log("[CEP] Dropping capsule now...");
           dropCapsule(transfer.capsule);
-        }, 1500);
+        }, 3000);
       } else {
         attempts++;
         if (attempts >= maxAttempts) {
