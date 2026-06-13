@@ -182,7 +182,7 @@
     const u = url.toLowerCase(), c = (ct||'').toLowerCase();
     
     // Ignore API metadata/download JSON endpoints (not actual file binaries)
-    if (u.includes('/backend-api/files/file-')) return false;
+    if (u.includes('/backend-api/files/')) return false;
 
     const fileUrl = u.includes('oaiusercontent') || u.includes('estuary') ||
       u.includes('/files/') || u.includes('file-service') ||
