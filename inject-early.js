@@ -21,32 +21,29 @@
   const IS_CLAUDE = window.location.hostname.includes('claude.ai');
 
   function toDataUrl(bufferOrBlob, ct) {
-    return new Promise(async (ok, fail) => {
+    return new Promise((ok, fail) => {
       try {
-        let u8arr;
+        let blob;
         if (bufferOrBlob instanceof Blob) {
-          const buffer = await bufferOrBlob.arrayBuffer();
-          u8arr = new Uint8Array(buffer);
+          blob = bufferOrBlob;
         } else if (bufferOrBlob instanceof ArrayBuffer) {
-          u8arr = new Uint8Array(bufferOrBlob);
+          blob = new Blob([bufferOrBlob], { type: ct || 'application/octet-stream' });
         } else if (typeof bufferOrBlob === 'string') {
           const len = bufferOrBlob.length;
-          u8arr = new Uint8Array(len);
+          const u8arr = new Uint8Array(len);
           for (let i = 0; i < len; i++) {
             u8arr[i] = bufferOrBlob.charCodeAt(i) & 0xff;
           }
+          blob = new Blob([u8arr], { type: ct || 'application/octet-stream' });
         } else {
           fail(new Error('Unsupported type'));
           return;
         }
-        
-        let binary = '';
-        const chunk = 8192;
-        for (let i = 0; i < u8arr.length; i += chunk) {
-          const sub = u8arr.subarray(i, i + chunk);
-          binary += String.fromCharCode.apply(null, sub);
-        }
-        ok('data:' + (ct || 'application/octet-stream') + ';base64,' + btoa(binary));
+
+        const r = new FileReader();
+        r.onload = () => ok(r.result);
+        r.onerror = () => fail(r.error);
+        r.readAsDataURL(blob);
       } catch (e) {
         fail(e);
       }
@@ -60,6 +57,12 @@
     window.__cep.files[k] = e;
     const noext = k.replace(/\.[^.]+$/,'');
     if (noext !== k) window.__cep.files[noext] = e;
+    
+    // Debug logging
+    const base64Part = dataUrl.split(',')[1] || '';
+    const size = Math.round(base64Part.length * 0.75);
+    console.log(`[CEP] Stored binary file: ${name} | MIME: ${mime || 'unknown'} | Size: ${size} bytes`);
+    
     window.dispatchEvent(new CustomEvent('__cepStored', {detail:{name,mime,url}}));
   }
 
@@ -467,12 +470,18 @@
                     const dlMeta = await dlRes.json();
                     const downloadUrl = dlMeta.download_url || dlMeta.downloadUrl || dlMeta.url;
                     if (downloadUrl) {
-                      const fileRes = await _fetch(downloadUrl);
+                      const headers = { 'accept': '*/*' };
+                      if (downloadUrl.includes('/backend-api/') && window.__cep.authHeader) {
+                        headers['Authorization'] = window.__cep.authHeader;
+                      }
+                      const fileRes = await _fetch(downloadUrl, { headers });
                       if (fileRes.ok) {
                         const buffer = await fileRes.arrayBuffer();
                         const dataUrl = await toDataUrl(buffer, fileRes.headers.get('content-type'));
                         save(filename, dataUrl, fileRes.headers.get('content-type'), downloadUrl);
                         console.log("[CEP] On-demand successfully saved missing file:", filename);
+                      } else {
+                        console.warn("[CEP] On-demand fetch failed with HTTP status:", fileRes.status, "for file:", filename);
                       }
                     }
                   }
