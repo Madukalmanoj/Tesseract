@@ -323,17 +323,20 @@ async function extractImages(turn) {
     if (!src||src.startsWith('data:image/svg')) { console.log('[CEP] Skipped: empty or svg'); continue; }
     if (img.getAttribute('aria-hidden')==='true') { console.log('[CEP] Skipped: aria-hidden'); continue; }
 
+    const sl = src.toLowerCase();
+
     // Skip avatar and profile picture elements (bypass for known uploaded/preview chat images)
     let isAvatar = false;
     const isUploadedImg = img.getAttribute('data-test-id') === 'uploaded-img' || 
-                          (img.className && typeof img.className === 'string' && img.className.includes('preview-image'));
+                          (img.className && typeof img.className === 'string' && img.className.includes('preview-image')) ||
+                          (sl.includes('twimg.com') && !sl.includes('profile_images')) ||
+                          (sl.includes('x.com') && sl.includes('/media/'));
     if (!isUploadedImg) {
       isAvatar = img.closest('[class*="avatar" i], [class*="profile-pic" i], [class*="profile-img" i]') ||
                  (img.className && typeof img.className === 'string' && (img.className.includes('avatar') || img.className.includes('profile-pic') || img.className.includes('profile-img')));
     }
     if (isAvatar) { console.log('[CEP] Skipped: avatar/profile container'); continue; }
 
-    const sl = src.toLowerCase();
     if (sl.includes('/favicon')||sl.includes('/_next/')||sl.includes('/icons/')) { console.log('[CEP] Skipped: favicon/icon'); continue; }
 
     const nw=img.naturalWidth, nh=img.naturalHeight;
