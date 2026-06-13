@@ -204,6 +204,16 @@ function getRole(turn) {
   if (tag === 'user-query') return 'user';
   if (tag === 'model-turn' || tag === 'model-response') return 'assistant';
 
+  // Grok specific role detection
+  if (PLAT === 'grok') {
+    const html = turn.outerHTML || '';
+    const lowerHtml = html.toLowerCase();
+    if (turn.querySelector('button[aria-label*="like" i], button[aria-label*="dislike" i], [data-testid*="like" i], [data-testid*="dislike" i], [data-testid*="feedback" i]')) return 'assistant';
+    if (lowerHtml.includes('grok-response') || lowerHtml.includes('grok-message') || lowerHtml.includes('assistant-message')) return 'assistant';
+    if (lowerHtml.includes('user-message') || lowerHtml.includes('human-message')) return 'user';
+    if (turn.querySelector('svg[data-testid="grok-logo"], [class*="grok-logo" i], [class*="grok_logo" i]')) return 'assistant';
+  }
+
   // ChatGPT
   const gptRole = turn.getAttribute('data-message-author-role') ||
                   turn.querySelector('[data-message-author-role]')
@@ -330,7 +340,13 @@ async function extractImages(turn) {
     const isUploadedImg = img.getAttribute('data-test-id') === 'uploaded-img' || 
                           (img.className && typeof img.className === 'string' && img.className.includes('preview-image')) ||
                           (sl.includes('twimg.com') && !sl.includes('profile_images')) ||
-                          (sl.includes('x.com') && sl.includes('/media/'));
+                          (sl.includes('x.com') && sl.includes('/media/')) ||
+                          (PLAT === 'grok' && (
+                            sl.includes('x.ai') ||
+                            sl.includes('twimg.com') ||
+                            (sl.includes('x.com') && !sl.includes('profile_images') && !sl.includes('avatar')) ||
+                            (sl.includes('grok.com') && !sl.includes('avatar') && !sl.includes('profile') && !sl.includes('logo') && !sl.includes('favicon'))
+                          ));
     if (!isUploadedImg) {
       isAvatar = img.closest('[class*="avatar" i], [class*="profile-pic" i], [class*="profile-img" i]') ||
                  (img.className && typeof img.className === 'string' && (img.className.includes('avatar') || img.className.includes('profile-pic') || img.className.includes('profile-img')));
@@ -346,7 +362,8 @@ async function extractImages(turn) {
     // Skip avatars on non-upload URLs
     const isUpload = sl.includes('blob:')||sl.includes('/files/')||sl.includes('oaiusercontent')||
                      sl.includes('upload')||sl.includes('/api/organizations/')||sl.includes('fileuploads')||
-                     sl.includes('googleusercontent')||sl.includes('google.com');
+                     sl.includes('googleusercontent')||sl.includes('google.com')||
+                     sl.includes('x.ai')||sl.includes('twimg.com');
     if (!isUpload&&sl.includes('avatar')) { console.log('[CEP] Skipped: non-upload avatar keyword'); continue; }
 
     // Fetch same-origin blob/data URLs directly in content script context

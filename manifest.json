@@ -38,7 +38,11 @@
     "https://*.x.com/*",
     "https://x.com/*",
     "https://*.twimg.com/*",
-    "https://pbs.twimg.com/*"
+    "https://pbs.twimg.com/*",
+    "https://*.x.ai/*",
+    "https://x.ai/*",
+    "https://*.xai.com/*",
+    "https://xai.com/*"
   ],
   "action": {
     "default_popup": "popup/popup.html",
@@ -55,7 +59,9 @@
         "https://chatgpt.com/*",
         "https://chat.openai.com/*",
         "https://gemini.google.com/*",
-        "https://grok.com/*"
+        "https://grok.com/*",
+        "https://x.com/*",
+        "https://*.x.com/*"
       ],
       "js": ["inject-early.js"],
       "run_at": "document_start",
@@ -74,7 +80,9 @@
         "https://chatgpt.com/*",
         "https://chat.openai.com/*",
         "https://gemini.google.com/*",
-        "https://grok.com/*"
+        "https://grok.com/*",
+        "https://x.com/*",
+        "https://*.x.com/*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"
@@ -91,7 +99,9 @@
         "https://chatgpt.com/*",
         "https://chat.openai.com/*",
         "https://gemini.google.com/*",
-        "https://grok.com/*"
+        "https://grok.com/*",
+        "https://x.com/*",
+        "https://*.x.com/*"
       ]
     }
   ]
