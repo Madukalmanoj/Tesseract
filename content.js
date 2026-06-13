@@ -94,7 +94,7 @@ function findTurns() {
   }
 
   else if (PLAT === 'gemini') {
-    for (const s of ['user-query', 'model-turn', '[class*="user-query"]', '[class*="model-turn"]']) {
+    for (const s of ['user-query', 'model-response', 'model-turn', '[class*="user-query"]', '[class*="model-response"]', '[class*="model-turn"]']) {
       for (const el of document.querySelectorAll(s)) {
         if (!seen.has(el)) { seen.add(el); found.push(el); }
       }
@@ -127,7 +127,7 @@ function findTurns() {
     '[class*="turn-"][class*="human"],[class*="turn-"][class*="assistant"]',
     '[class*="MessageContent"],[class*="message-content"]',
     '[class*="ConversationTurn"],[class*="conversation-turn"]',
-    'user-query, model-turn, [class*="user-query"], [class*="model-turn"]'
+    'user-query, model-response, model-turn, [class*="user-query"], [class*="model-response"], [class*="model-turn"]'
   ];
   for (const sel of exactSels) {
     for (const el of document.querySelectorAll(sel)) {
@@ -196,13 +196,13 @@ function getRole(turn) {
   if (PLAT === 'gemini') {
     const tag = turn.tagName?.toLowerCase();
     if (tag === 'user-query' || turn.classList?.contains('user-query') || turn.closest('user-query') || turn.className?.includes?.('user-query')) return 'user';
-    if (tag === 'model-turn' || turn.classList?.contains('model-turn') || turn.closest('model-turn') || turn.className?.includes?.('model-turn')) return 'assistant';
+    if (tag === 'model-turn' || tag === 'model-response' || turn.classList?.contains('model-turn') || turn.classList?.contains('model-response') || turn.closest('model-turn') || turn.closest('model-response') || turn.className?.includes?.('model-turn') || turn.className?.includes?.('model-response')) return 'assistant';
   }
 
   // Gemini tags fallback (non-Gemini platforms)
   const tag = turn.tagName?.toLowerCase();
   if (tag === 'user-query') return 'user';
-  if (tag === 'model-turn') return 'assistant';
+  if (tag === 'model-turn' || tag === 'model-response') return 'assistant';
 
   // ChatGPT
   const gptRole = turn.getAttribute('data-message-author-role') ||
@@ -732,6 +732,9 @@ async function checkPendingTransfer() {
       const inputSel = (SEL[PLAT]||SEL.claude).input;
       const input = document.querySelector(inputSel);
       if (input) {
+        // Focus the input textbox to trigger lazy loading of toolbar and file input components
+        try { input.focus(); } catch(_) {}
+
         // If the capsule contains files, verify if we should wait for file input to appear
         const hasFiles = (transfer.capsule.images && transfer.capsule.images.length > 0) || 
                          (transfer.capsule.files && transfer.capsule.files.length > 0);
