@@ -884,7 +884,39 @@ async function extractAll() {
   await expandCollapsedSections();
 
   const orgId = PLAT==='claude' ? getOrgId() : null;
-  const {files:store} = await getStore();
+  const {files:store, authHeader, idMap} = await getStore();
+  
+  // On ChatGPT, programmatically fetch all missing files via background service worker (safely bypassing CSP/CORS)
+  if (PLAT === 'chatgpt' && authHeader && idMap) {
+    for (const [fileId, filename] of Object.entries(idMap)) {
+      const k = filename.toLowerCase().trim();
+      // If we don't have the file binary yet (or it has no dataUrl)
+      if (!store[k] || !store[k].dataUrl) {
+        console.log("[CEP] Background fetching missing file:", filename, fileId);
+        try {
+          const r = await bg('fetchChatGPTFile', { fileId, authHeader });
+          if (r && !r.error && r.dataUrl) {
+            const fileEntry = {
+              dataUrl: r.dataUrl,
+              mimeType: r.mimeType,
+              filename: r.filename || filename,
+              url: r.url || ''
+            };
+            store[k] = fileEntry;
+            // Also register under name without extension
+            const noext = k.replace(/\.[^.]+$/,'');
+            if (noext !== k) store[noext] = fileEntry;
+            console.log("[CEP] Background successfully fetched file:", filename);
+          } else {
+            console.warn("[CEP] Background fetch failed for:", filename, r?.error);
+          }
+        } catch(e) {
+          console.warn("[CEP] Background fetch error for:", filename, e);
+        }
+      }
+    }
+  }
+
   const consumedStore = new Set();
 
   const result = {

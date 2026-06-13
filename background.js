@@ -19,7 +19,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     return true;
   }
   if (req.action === "fetchChatGPTFile") {
-    fetchChatGPTFile(req.fileId).then(sendResponse).catch(e => sendResponse({ error: e.message }));
+    fetchChatGPTFile(req.fileId, req.authHeader).then(sendResponse).catch(e => sendResponse({ error: e.message }));
     return true;
   }
   if (req.action === "llmRefine") {
@@ -164,11 +164,15 @@ function filenameFromUrl(urlStr) {
 // Response shape from /backend-api/files/{id}/download:
 // { status:"success", file_name:"foo.docx", file_size_bytes:1234,
 //   download_url:"https://chatgpt.com/backend-api/estuary/content?...", ... }
-async function fetchChatGPTFile(fileId) {
+async function fetchChatGPTFile(fileId, authHeader) {
   // Step 1: get signed download URL + filename from download endpoint
+  const headers = { "accept": "application/json" };
+  if (authHeader) {
+    headers["Authorization"] = authHeader;
+  }
   const dlRes = await fetch("https://chatgpt.com/backend-api/files/" + fileId + "/download", {
     credentials: "include",
-    headers: { "accept": "application/json" }
+    headers
   });
   if (!dlRes.ok) throw new Error("download-meta HTTP " + dlRes.status);
   const dlMeta = await dlRes.json();
@@ -183,13 +187,23 @@ async function fetchChatGPTFile(fileId) {
   if (!downloadUrl) throw new Error("no download_url — full response: " + JSON.stringify(dlMeta));
 
   // Step 2: fetch the actual blob (download_url may be chatgpt.com or oaiusercontent.com)
-  const blobRes = await fetch(downloadUrl, { credentials: "include" });
+  const fileHeaders = {};
+  if (downloadUrl.includes('/backend-api/') && authHeader) {
+    fileHeaders["Authorization"] = authHeader;
+  }
+  const blobRes = await fetch(downloadUrl, { credentials: "include", headers: fileHeaders });
   if (!blobRes.ok) throw new Error("blob HTTP " + blobRes.status);
   const ct = blobRes.headers.get("content-type") || "application/octet-stream";
   const buffer = await blobRes.arrayBuffer();
   const bytes = new Uint8Array(buffer);
+  
+  // Convert to base64 using chunking to avoid call stack size exceeded
   let binary = "";
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  const chunk = 8192;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    const sub = bytes.subarray(i, i + chunk);
+    binary += String.fromCharCode.apply(null, sub);
+  }
   const base64 = btoa(binary);
 
   // Step 3: resolve best filename

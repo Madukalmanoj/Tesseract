@@ -469,44 +469,6 @@
           if (res.ok) {
             const data = await res.json();
             scanJsonForFiles(data);
-            
-            // Scan parsed files. If any file is in our idMap but NOT yet in window.__cep.files:
-            // Fetch it programmatically!
-            for (const [fileId, filename] of Object.entries(window.__cep.idMap)) {
-              const k = filename.toLowerCase().trim();
-              if (!window.__cep.files[k]) {
-                console.log("[CEP] On-demand fetching missing file:", filename, fileId);
-                try {
-                  const dlRes = await _fetch(`/backend-api/files/${fileId}/download`, {
-                    headers: {
-                      'Authorization': window.__cep.authHeader,
-                      'accept': 'application/json'
-                    }
-                  });
-                  if (dlRes.ok) {
-                    const dlMeta = await dlRes.json();
-                    const downloadUrl = dlMeta.download_url || dlMeta.downloadUrl || dlMeta.url;
-                    if (downloadUrl) {
-                      const headers = { 'accept': '*/*' };
-                      if (downloadUrl.includes('/backend-api/') && window.__cep.authHeader) {
-                        headers['Authorization'] = window.__cep.authHeader;
-                      }
-                      const fileRes = await _fetch(downloadUrl, { headers });
-                      if (fileRes.ok) {
-                        const buffer = await fileRes.arrayBuffer();
-                        const dataUrl = await toDataUrl(buffer, fileRes.headers.get('content-type'));
-                        save(filename, dataUrl, fileRes.headers.get('content-type'), downloadUrl);
-                        console.log("[CEP] On-demand successfully saved missing file:", filename);
-                      } else {
-                        console.warn("[CEP] On-demand fetch failed with HTTP status:", fileRes.status, "for file:", filename);
-                      }
-                    }
-                  }
-                } catch(e) {
-                  console.warn("[CEP] Failed on-demand fetch for file:", filename, e);
-                }
-              }
-            }
           }
         } catch(e) {
           console.warn("[CEP] On-demand conversation fetch failed:", e);
@@ -514,7 +476,14 @@
       }
     }
     
-    window.dispatchEvent(new CustomEvent('__cepReply', {detail:{files:window.__cep.files, orgId:window.__cep.orgId}}));
+    window.dispatchEvent(new CustomEvent('__cepReply', {
+      detail: {
+        files: window.__cep.files,
+        orgId: window.__cep.orgId,
+        authHeader: window.__cep.authHeader,
+        idMap: window.__cep.idMap
+      }
+    }));
   });
   window.addEventListener('__cepStore', e => {
     const {filename,dataUrl,mimeType,url} = e.detail||{};
