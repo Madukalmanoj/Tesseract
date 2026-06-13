@@ -307,20 +307,85 @@ function isUINoiseFileName(name) {
 // Resolve real image URL (handles lazy loading data attributes and upscales CDN paths)
 function resolveImageSrc(img) {
   let src = '';
-  for (const attr of ['data-src', 'data-zoom', 'data-original-src', 'original-src', 'data-hero-src', 'data-image-url']) {
-    const val = img.getAttribute(attr);
-    if (val && (val.startsWith('http') || val.startsWith('blob:') || val.startsWith('data:'))) {
-      src = val;
-      break;
+
+  // 1. Check srcset for high-res versions
+  const srcset = img.getAttribute('srcset');
+  if (srcset) {
+    try {
+      const candidates = srcset.split(',').map(s => {
+        const parts = s.trim().split(/\s+/);
+        const url = parts[0];
+        const desc = parts[1] || '';
+        let score = 0;
+        if (desc.endsWith('w')) {
+          score = parseInt(desc.slice(0, -1), 10) || 0;
+        } else if (desc.endsWith('x')) {
+          score = parseFloat(desc.slice(0, -1)) * 1000 || 0;
+        } else {
+          score = 1;
+        }
+        return { url, score };
+      });
+      candidates.sort((a, b) => b.score - a.score);
+      if (candidates.length > 0 && candidates[0].url) {
+        src = candidates[0].url;
+      }
+    } catch (_) {}
+  }
+
+  // 2. Check other data-attributes on the image element
+  if (!src) {
+    for (const attr of ['data-src', 'data-zoom', 'data-zoom-src', 'data-original-src', 'original-src', 'data-hero-src', 'data-image-url']) {
+      const val = img.getAttribute(attr);
+      if (val && (val.startsWith('http') || val.startsWith('blob:') || val.startsWith('data:'))) {
+        src = val;
+        break;
+      }
     }
   }
+
+  // 3. Fallback to parent link/container attributes if we have a blob/data URL or nothing
+  if (!src || src.startsWith('blob:') || src.startsWith('data:')) {
+    let p = img.parentElement;
+    let depth = 0;
+    while (p && depth < 4) {
+      if (p.tagName?.toLowerCase() === 'a') {
+        const href = p.getAttribute('href');
+        if (href && (href.startsWith('http') || href.includes('twimg.com') || href.includes('x.ai') || href.includes('grok.com'))) {
+          const lowerHref = href.toLowerCase();
+          if (/\.(png|jpe?g|webp|gif)/i.test(lowerHref) || lowerHref.includes('twimg.com') || lowerHref.includes('x.ai') || lowerHref.includes('/media/') || lowerHref.includes('image')) {
+            src = href;
+            break;
+          }
+        }
+      }
+      
+      for (const attr of ['data-src', 'data-zoom', 'data-zoom-src', 'data-original-src', 'original-src', 'data-hero-src', 'data-image-url', 'href']) {
+        const val = p.getAttribute(attr);
+        if (val && (val.startsWith('http') || val.includes('twimg.com') || val.includes('x.ai') || val.includes('grok.com')) && !val.startsWith('blob:') && !val.startsWith('data:')) {
+          src = val;
+          break;
+        }
+      }
+      if (src && !src.startsWith('blob:') && !src.startsWith('data:')) break;
+      p = p.parentElement;
+      depth++;
+    }
+  }
+
+  // 4. Ultimate fallback to standard src
   if (!src) src = img.src || '';
 
-  // Upscale Twitter/X CDN image URLs to original resolution
-  const sl = src.toLowerCase();
+  // 5. Clean up & upscale the resolved URL
+  let sl = src.toLowerCase();
+  
+  // Twitter / X.com CDN upscaling
   if (sl.includes('twimg.com') || sl.includes('x.com')) {
     if (src.includes('name=')) {
       src = src.replace(/name=[a-zA-Z0-9_]+/gi, 'name=orig');
+    } else {
+      // Legacy colon syntax
+      src = src.replace(/:(small|thumb|medium|large|tiny)/gi, ':orig');
     }
   }
 
