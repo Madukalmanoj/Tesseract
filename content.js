@@ -547,7 +547,7 @@ async function dropCapsule(cap) {
     }
     // Wait for ProseMirror/React to finish re-rendering after text insertion
     // before injecting files. This prevents the editor from swallowing file events.
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 500));
   }
 
   // ── 2. Build file objects ─────────────────────────────────────────────────
@@ -726,7 +726,7 @@ async function checkPendingTransfer() {
 
     // Polling loop to wait for input element to be available
     let attempts = 0;
-    const maxAttempts = 60; // 30 seconds (500ms intervals)
+    const maxAttempts = 150; // 30 seconds (200ms intervals)
     const interval = setInterval(() => {
       const inputSel = (SEL[PLAT]||SEL.claude).input;
       const input = document.querySelector(inputSel);
@@ -745,11 +745,11 @@ async function checkPendingTransfer() {
         }
 
         clearInterval(interval);
-        console.log("[CEP] Pending transfer found, waiting 3.0s for editor to initialize event listeners...");
+        console.log("[CEP] Pending transfer found, waiting 1.2s for editor to initialize event listeners...");
         setTimeout(() => {
           console.log("[CEP] Dropping capsule now...");
           dropCapsule(transfer.capsule);
-        }, 3000);
+        }, 1200);
       } else {
         attempts++;
         if (attempts >= maxAttempts) {
@@ -757,7 +757,7 @@ async function checkPendingTransfer() {
           console.warn("[CEP] Target input element not found after 30 seconds.");
         }
       }
-    }, 500);
+    }, 200);
   } catch(e) {
     console.error("[CEP] Error in checkPendingTransfer:", e);
   }
