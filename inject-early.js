@@ -29,11 +29,42 @@
     window.dispatchEvent(new CustomEvent('__cepStored', {detail:{name,mime,url}}));
   }
 
+  function urlsMatchFile(url1, url2) {
+    if (!url1 || !url2) return false;
+    if (url1 === url2) return true;
+    try {
+      const u1 = new URL(url1, window.location.origin);
+      const u2 = new URL(url2, window.location.origin);
+      
+      // 1. Compare sig parameter (unique signature query param)
+      const sig1 = u1.searchParams.get('sig');
+      const sig2 = u2.searchParams.get('sig');
+      if (sig1 && sig2 && sig1 === sig2) return true;
+
+      // 2. Compare file-XXXXXX ID in path
+      const id1 = u1.pathname.match(/file-[a-zA-Z0-9]{8,}/);
+      const id2 = u2.pathname.match(/file-[a-zA-Z0-9]{8,}/);
+      if (id1 && id2 && id1[0] === id2[0]) return true;
+
+      // 3. Fallback: compare pathname if not a generic estuary path
+      if (u1.pathname === u2.pathname && !u1.pathname.includes('estuary') && !u1.pathname.includes('content')) return true;
+    } catch(_) {}
+    return false;
+  }
+
   function getName(url) {
+    if (!url) return null;
     // 1. pre-registered from /download JSON
     if (window.__cep.urlMap[url]) return window.__cep.urlMap[url];
     try {
-      const u = new URL(url);
+      const u = new URL(url, window.location.origin);
+      if (window.__cep.urlMap[u.href]) return window.__cep.urlMap[u.href];
+      
+      // Try fuzzy signature or file ID mapping
+      for (const [dlUrl, name] of Object.entries(window.__cep.urlMap)) {
+        if (urlsMatchFile(url, dlUrl)) return name;
+      }
+
       // 2. rscd param
       const rscd = u.searchParams.get('rscd') || u.searchParams.get('response-content-disposition') || '';
       if (rscd) {
