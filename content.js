@@ -294,6 +294,15 @@ function isUINoiseFileName(name) {
   return false;
 }
 
+// Resolve real image URL (handles lazy loading data attributes)
+function resolveImageSrc(img) {
+  for (const attr of ['data-src', 'data-zoom', 'data-original-src', 'original-src', 'data-hero-src', 'data-image-url']) {
+    const val = img.getAttribute(attr);
+    if (val && (val.startsWith('http') || val.startsWith('blob:') || val.startsWith('data:'))) return val;
+  }
+  return img.src || '';
+}
+
 // ── Extract images from a turn (bg proxy for CORS) ──────────────────────────
 async function extractImages(turn) {
   const imgs = [];
@@ -301,8 +310,16 @@ async function extractImages(turn) {
   console.log('[CEP] Found', allImgs.length, 'total images in turn');
   for (const img of allImgs) {
     if (isInsideUI(img)) { console.log('[CEP] Skipped: inside UI'); continue; }
-    const src = img.src || '';
-    console.log('[CEP] Image src:', src);
+    
+    // Log all attributes of the img element to the console for debugging
+    const attrs = {};
+    for (const attr of img.attributes) {
+      attrs[attr.name] = attr.value;
+    }
+    console.log('[CEP] Image elements attributes:', JSON.stringify(attrs));
+
+    const src = resolveImageSrc(img);
+    console.log('[CEP] Resolved Image src:', src);
     if (!src||src.startsWith('data:image/svg')) { console.log('[CEP] Skipped: empty or svg'); continue; }
     if (img.getAttribute('aria-hidden')==='true') { console.log('[CEP] Skipped: aria-hidden'); continue; }
 
