@@ -297,29 +297,62 @@ function isUINoiseFileName(name) {
 // ── Extract images from a turn (bg proxy for CORS) ──────────────────────────
 async function extractImages(turn) {
   const imgs = [];
-  for (const img of turn.querySelectorAll('img')) {
-    if (isInsideUI(img)) continue;
+  const allImgs = turn.querySelectorAll('img');
+  console.log('[CEP] Found', allImgs.length, 'total images in turn');
+  for (const img of allImgs) {
+    if (isInsideUI(img)) { console.log('[CEP] Skipped: inside UI'); continue; }
     const src = img.src || '';
-    if (!src||src.startsWith('data:image/svg')) continue;
-    if (img.getAttribute('aria-hidden')==='true') continue;
+    console.log('[CEP] Image src:', src);
+    if (!src||src.startsWith('data:image/svg')) { console.log('[CEP] Skipped: empty or svg'); continue; }
+    if (img.getAttribute('aria-hidden')==='true') { console.log('[CEP] Skipped: aria-hidden'); continue; }
 
     // Skip avatar and profile picture elements
-    if (img.closest('[class*="avatar" i], [class*="profile" i], [class*="user-image" i]')) continue;
-    if (img.className && typeof img.className === 'string' && (img.className.includes('avatar') || img.className.includes('profile'))) continue;
+    const isAvatar = img.closest('[class*="avatar" i], [class*="profile-pic" i], [class*="profile-img" i]') ||
+                     (img.className && typeof img.className === 'string' && (img.className.includes('avatar') || img.className.includes('profile-pic') || img.className.includes('profile-img')));
+    if (isAvatar) { console.log('[CEP] Skipped: avatar/profile container'); continue; }
 
     const sl = src.toLowerCase();
-    if (sl.includes('/favicon')||sl.includes('/_next/')||sl.includes('/icons/')) continue;
+    if (sl.includes('/favicon')||sl.includes('/_next/')||sl.includes('/icons/')) { console.log('[CEP] Skipped: favicon/icon'); continue; }
 
     const nw=img.naturalWidth, nh=img.naturalHeight;
-    if (nw>0&&nh>0&&nw<24&&nh<24) continue;
+    console.log('[CEP] Image natural size:', nw, 'x', nh);
+    if (nw>0&&nh>0&&nw<24&&nh<24) { console.log('[CEP] Skipped: too small'); continue; }
+    
     // Skip avatars on non-upload URLs
     const isUpload = sl.includes('blob:')||sl.includes('/files/')||sl.includes('oaiusercontent')||
-                     sl.includes('upload')||sl.includes('/api/organizations/')||sl.includes('fileuploads');
-    if (!isUpload&&sl.includes('avatar')) continue;
+                     sl.includes('upload')||sl.includes('/api/organizations/')||sl.includes('fileuploads')||
+                     sl.includes('googleusercontent')||sl.includes('google.com');
+    if (!isUpload&&sl.includes('avatar')) { console.log('[CEP] Skipped: non-upload avatar keyword'); continue; }
 
-    const r = await bg('fetchAsBase64', {url:src});
-    if (!r.error && r.size > 200) {
+    // Fetch same-origin blob/data URLs directly in content script context
+    let r;
+    if (src.startsWith('blob:') || src.startsWith('data:')) {
+      console.log('[CEP] Fetching blob/data URL directly in content script');
+      try {
+        const resp = await fetch(src);
+        const blob = await resp.blob();
+        const dataUrl = await new Promise((ok, fail) => {
+          const reader = new FileReader();
+          reader.onload = () => ok(reader.result);
+          reader.onerror = fail;
+          reader.readAsDataURL(blob);
+        });
+        r = { dataUrl, mimeType: blob.type, size: blob.size };
+      } catch(e) {
+        r = { error: e.message };
+      }
+    } else {
+      console.log('[CEP] Fetching remote URL via background script:', src);
+      r = await bg('fetchAsBase64', {url:src});
+    }
+
+    if (r.error) {
+      console.warn('[CEP] Fetch failed for image:', src, r.error);
+    } else if (r.size > 200) {
+      console.log('[CEP] Image fetched successfully, size:', r.size);
       imgs.push({src, dataUrl:r.dataUrl, mimeType:r.mimeType, size:r.size, alt:img.alt||''});
+    } else {
+      console.log('[CEP] Image skipped: size too small:', r.size);
     }
   }
   return imgs;
