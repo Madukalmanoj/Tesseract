@@ -511,7 +511,7 @@ async function dropCapsule(cap) {
     }
     // Wait for ProseMirror/React to finish re-rendering after text insertion
     // before injecting files. This prevents the editor from swallowing file events.
-    await new Promise(r => setTimeout(r, 400));
+    await new Promise(r => setTimeout(r, 1000));
   }
 
   // ── 2. Build file objects ─────────────────────────────────────────────────
@@ -687,8 +687,11 @@ async function checkPendingTransfer() {
       const input = document.querySelector(inputSel);
       if (input) {
         clearInterval(interval);
-        console.log("[CEP] Pending transfer found, dropping capsule...");
-        dropCapsule(transfer.capsule);
+        console.log("[CEP] Pending transfer found, waiting 1.5s for editor to initialize event listeners...");
+        setTimeout(() => {
+          console.log("[CEP] Dropping capsule now...");
+          dropCapsule(transfer.capsule);
+        }, 1500);
       } else {
         attempts++;
         if (attempts >= maxAttempts) {
