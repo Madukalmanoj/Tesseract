@@ -519,7 +519,7 @@ async function extractImages(turn) {
 }
 
 // ── Extract files from a turn ────────────────────────────────────────────────
-async function extractFiles(turn, store, orgId) {
+async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
   const files = [];
   const seen  = new Set();
 
@@ -532,22 +532,109 @@ async function extractFiles(turn, store, orgId) {
 
   // ── ChatGPT: blobs already in store (intercepted by inject-early) ────────
   if (PLAT === 'chatgpt') {
-    // Everything in the store that isn't an image
-    for (const [k,v] of Object.entries(store||{})) {
-      if (!v.filename) continue;
-      const mime = (v.mimeType||'').toLowerCase();
-      // Skip images — handled separately
-      if (mime.startsWith('image/')) continue;
-      add({name:v.filename, dataUrl:v.dataUrl, mimeType:v.mimeType, source:'intercepted', note:'✓ data'});
-    }
-    // Also scan for any file chips with text name
+    // Find all chips in this turn
+    const turnChips = [];
     for (const chip of turn.querySelectorAll('[class*="FileCard"],[class*="AttachmentTile"],[class*="file-tile"],[data-message-file-name]')) {
       if (isInsideUI(chip)) continue;
       const name = chip.dataset?.messageFileName || chipText(chip);
-      if (!name||isUINoiseFileName(name)||seen.has(name.toLowerCase())) continue;
-      const stored = fromStore(name, store);
-      if (stored) add({name, dataUrl:stored.dataUrl, mimeType:stored.mimeType, source:'chip-matched', note:'✓ data'});
-      else add({name, source:'chip', note:'name only'});
+      if (!name || isUINoiseFileName(name)) continue;
+      if (turnChips.some(c => c.name.toLowerCase() === name.toLowerCase())) continue;
+      turnChips.push({ name, chip });
+    }
+
+    const unmatchedChips = [];
+    for (const item of turnChips) {
+      const nameLower = item.name.toLowerCase().trim();
+      let matchedStored = null;
+      
+      // 1. Try exact match
+      if (store[nameLower] && !consumedStore.has(store[nameLower])) {
+        matchedStored = store[nameLower];
+      } else {
+        // 2. Try fuzzy match
+        const noext = nameLower.replace(/\.[^.]+$/, '');
+        for (const [sk, sv] of Object.entries(store)) {
+          if (consumedStore.has(sv)) continue;
+          if (sk === noext || sk.includes(noext) || noext.includes(sk.replace(/\.[^.]+$/, ''))) {
+            matchedStored = sv;
+            break;
+          }
+        }
+      }
+      
+      if (matchedStored) {
+        consumedStore.add(matchedStored);
+        add({
+          name: item.name,
+          dataUrl: matchedStored.dataUrl,
+          mimeType: matchedStored.mimeType,
+          source: 'chip-matched',
+          note: '✓ data'
+        });
+      } else {
+        unmatchedChips.push(item);
+      }
+    }
+
+    // Pair remaining unmatched chips with unmatched generic store files
+    const unmatchedGenericStored = [];
+    for (const [sk, sv] of Object.entries(store || {})) {
+      if (consumedStore.has(sv)) continue;
+      if (unmatchedGenericStored.includes(sv)) continue;
+      const filename = sv.filename || '';
+      const isGeneric = filename.toLowerCase().startsWith('file.') || filename.toLowerCase().startsWith('file_');
+      if (isGeneric) {
+        unmatchedGenericStored.push(sv);
+      }
+    }
+
+    // Step 1: Pair by matching extension/type
+    for (let cIdx = unmatchedChips.length - 1; cIdx >= 0; cIdx--) {
+      const chipItem = unmatchedChips[cIdx];
+      const chipExt = chipItem.name.split('.').pop()?.toLowerCase() || '';
+      
+      const gIdx = unmatchedGenericStored.findIndex(sv => {
+        const gExt = (sv.filename || '').split('.').pop()?.toLowerCase() || '';
+        return gExt === chipExt || mext(sv.mimeType) === chipExt;
+      });
+      
+      if (gIdx !== -1) {
+        const storedFile = unmatchedGenericStored.splice(gIdx, 1)[0];
+        consumedStore.add(storedFile);
+        add({
+          name: chipItem.name,
+          dataUrl: storedFile.dataUrl,
+          mimeType: storedFile.mimeType,
+          source: 'chip-paired-ext',
+          note: '✓ data'
+        });
+        unmatchedChips.splice(cIdx, 1);
+      }
+    }
+
+    // Step 2: Pair remaining by index order
+    const pairCount = Math.min(unmatchedChips.length, unmatchedGenericStored.length);
+    for (let idx = 0; idx < pairCount; idx++) {
+      const chipItem = unmatchedChips[idx];
+      const storedFile = unmatchedGenericStored[idx];
+      consumedStore.add(storedFile);
+      add({
+        name: chipItem.name,
+        dataUrl: storedFile.dataUrl,
+        mimeType: storedFile.mimeType,
+        source: 'chip-paired-fallback',
+        note: '✓ data'
+      });
+    }
+
+    // Step 3: Remaining unmatched chips are name-only
+    for (let idx = pairCount; idx < unmatchedChips.length; idx++) {
+      const chipItem = unmatchedChips[idx];
+      add({
+        name: chipItem.name,
+        source: 'chip',
+        note: 'name only'
+      });
     }
   }
 
@@ -569,7 +656,14 @@ async function extractFiles(turn, store, orgId) {
 
         // Check store first
         const stored = fromStore(name, store);
-        if (stored) { fd.dataUrl=stored.dataUrl; fd.mimeType=stored.mimeType; fd.note='✓ intercepted'; add(fd); continue; }
+        if (stored && !consumedStore.has(stored)) {
+          consumedStore.add(stored);
+          fd.dataUrl=stored.dataUrl;
+          fd.mimeType=stored.mimeType;
+          fd.note='✓ intercepted';
+          add(fd);
+          continue;
+        }
 
         // Find file ID
         let fileId = null;
@@ -588,7 +682,16 @@ async function extractFiles(turn, store, orgId) {
           for (const suf of ['/content','']) {
             const url=`https://api2.claude.ai/api/organizations/${orgId}/files/${fileId}${suf}`;
             const r=await bg('fetchAsBase64',{url});
-            if (!r.error) { fd.dataUrl=r.dataUrl; fd.mimeType=r.mimeType; fd.note='✓ claude-api'; break; }
+            if (!r.error) {
+              fd.dataUrl=r.dataUrl;
+              fd.mimeType=r.mimeType;
+              fd.note='✓ claude-api';
+              // If we matched the API response, let's see if there is a store file with this dataurl to consume it
+              for (const [sk, sv] of Object.entries(store||{})) {
+                if (sv.dataUrl === r.dataUrl) consumedStore.add(sv);
+              }
+              break;
+            }
           }
         }
         add(fd);
@@ -604,6 +707,7 @@ async function extractFiles(turn, store, orgId) {
       'button[aria-label*="file" i]', 'button[aria-label*="attachment" i]',
       '[class*="file" i]', '[class*="doc" i]', 'div[role="button"]', 'span', 'p', 'a'
     ];
+    const turnChips = [];
     for (const sel of chipSels) {
       for (const chip of turn.querySelectorAll(sel)) {
         if (isInsideUI(chip)) continue;
@@ -616,23 +720,92 @@ async function extractFiles(turn, store, orgId) {
         if (!hasExt) continue;
         
         if (isUINoiseFileName(cleanName) || seen.has(cleanName.toLowerCase())) continue;
-        
-        const fd = { name: cleanName, source: PLAT + '-chip', note: 'name only' };
-        
-        // Check store first for intercepted content
-        const stored = fromStore(cleanName, store);
-        if (stored) {
-          fd.dataUrl = stored.dataUrl;
-          fd.mimeType = stored.mimeType;
-          fd.note = '✓ intercepted';
-        }
-        
-        add(fd);
+        if (turnChips.some(c => c.name.toLowerCase() === cleanName.toLowerCase())) continue;
+        turnChips.push({ name: cleanName, chip });
       }
+    }
+
+    const unmatchedChips = [];
+    for (const item of turnChips) {
+      const stored = fromStore(item.name, store);
+      if (stored && !consumedStore.has(stored)) {
+        consumedStore.add(stored);
+        add({
+          name: item.name,
+          dataUrl: stored.dataUrl,
+          mimeType: stored.mimeType,
+          source: PLAT + '-chip-matched',
+          note: '✓ intercepted'
+        });
+      } else {
+        unmatchedChips.push(item);
+      }
+    }
+
+    // Pair remaining unmatched chips with unmatched generic store files
+    const unmatchedGenericStored = [];
+    for (const [sk, sv] of Object.entries(store || {})) {
+      if (consumedStore.has(sv)) continue;
+      if (unmatchedGenericStored.includes(sv)) continue;
+      const filename = sv.filename || '';
+      const isGeneric = filename.toLowerCase().startsWith('file.') || filename.toLowerCase().startsWith('file_');
+      if (isGeneric) {
+        unmatchedGenericStored.push(sv);
+      }
+    }
+
+    // Step 1: Pair by matching extension/type
+    for (let cIdx = unmatchedChips.length - 1; cIdx >= 0; cIdx--) {
+      const chipItem = unmatchedChips[cIdx];
+      const chipExt = chipItem.name.split('.').pop()?.toLowerCase() || '';
+      
+      const gIdx = unmatchedGenericStored.findIndex(sv => {
+        const gExt = (sv.filename || '').split('.').pop()?.toLowerCase() || '';
+        return gExt === chipExt || mext(sv.mimeType) === chipExt;
+      });
+      
+      if (gIdx !== -1) {
+        const storedFile = unmatchedGenericStored.splice(gIdx, 1)[0];
+        consumedStore.add(storedFile);
+        add({
+          name: chipItem.name,
+          dataUrl: storedFile.dataUrl,
+          mimeType: storedFile.mimeType,
+          source: PLAT + '-chip-paired-ext',
+          note: '✓ intercepted'
+        });
+        unmatchedChips.splice(cIdx, 1);
+      }
+    }
+
+    // Step 2: Pair remaining by index order
+    const pairCount = Math.min(unmatchedChips.length, unmatchedGenericStored.length);
+    for (let idx = 0; idx < pairCount; idx++) {
+      const chipItem = unmatchedChips[idx];
+      const storedFile = unmatchedGenericStored[idx];
+      consumedStore.add(storedFile);
+      add({
+        name: chipItem.name,
+        dataUrl: storedFile.dataUrl,
+        mimeType: storedFile.mimeType,
+        source: PLAT + '-chip-paired-fallback',
+        note: '✓ intercepted'
+      });
+    }
+
+    // Step 3: Remaining unmatched chips are name-only
+    for (let idx = pairCount; idx < unmatchedChips.length; idx++) {
+      const chipItem = unmatchedChips[idx];
+      add({
+        name: chipItem.name,
+        source: PLAT + '-chip',
+        note: 'name only'
+      });
     }
   }
 
   return files;
+}
 }
 
 function chipText(el) {
@@ -713,6 +886,7 @@ async function extractAll() {
 
   const orgId = PLAT==='claude' ? getOrgId() : null;
   const {files:store} = await getStore();
+  const consumedStore = new Set();
 
   const result = {
     platform:PLAT, url:location.href,
@@ -737,7 +911,7 @@ async function extractAll() {
     if (textKey) seenTexts.add(textKey);
 
     const images= await extractImages(turn);
-    const files = await extractFiles(turn, store, orgId);
+    const files = await extractFiles(turn, store, orgId, consumedStore);
 
     result.allImages.push(...images);
     result.allFiles.push(...files);
@@ -746,10 +920,37 @@ async function extractAll() {
     }
   }
 
-  // Deduplicate images and files
-  const si=new Set(), sf=new Set();
+  // Add any generic/unconsumed store files that were not matched to any DOM chip
+  for (const [k, v] of Object.entries(store || {})) {
+    if (consumedStore.has(v)) continue;
+    if (!v.filename) continue;
+    const mime = (v.mimeType || '').toLowerCase();
+    if (mime.startsWith('image/')) continue;
+    
+    result.allFiles.push({
+      name: v.filename,
+      dataUrl: v.dataUrl,
+      mimeType: v.mimeType,
+      source: 'intercepted-fallback',
+      note: '✓ data'
+    });
+    consumedStore.add(v);
+  }
+
+  // Deduplicate images
+  const si=new Set();
   result.allImages = result.allImages.filter(i=>{if(si.has(i.src))return false;si.add(i.src);return true;});
-  result.allFiles  = result.allFiles.filter(f=>{if(sf.has(f.name))return false;sf.add(f.name);return true;});
+
+  // Deduplicate files, preferring versions with dataUrl
+  const fileMap = new Map();
+  for (const f of result.allFiles) {
+    const key = f.name.toLowerCase();
+    const existing = fileMap.get(key);
+    if (!existing || (!existing.dataUrl && f.dataUrl)) {
+      fileMap.set(key, f);
+    }
+  }
+  result.allFiles = Array.from(fileMap.values());
 
   return result;
 }
