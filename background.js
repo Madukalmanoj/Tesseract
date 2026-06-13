@@ -1,4 +1,4 @@
-// ChatExtract Pro v3.3 — Background Service Worker
+// OmniExtract — Background Service Worker
 
 chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   // Debug: test a single fileId and return raw API response

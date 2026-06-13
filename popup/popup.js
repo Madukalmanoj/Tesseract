@@ -1,4 +1,4 @@
-// ChatExtract Pro v3 — Popup Script
+// OmniExtract — Popup Script
 
 let extractedData = null;
 let currentProvider = "groq";

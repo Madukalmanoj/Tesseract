@@ -1,4 +1,4 @@
-// ChatExtract Pro v4 — Content Script
+// OmniExtract — Content Script
 (function() {
 'use strict';
 

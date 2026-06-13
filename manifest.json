@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "ChatExtract Pro",
+  "name": "OmniExtract",
   "version": "3.2.0",
   "description": "Extract chats → auto-refine with LLM → save as capsules → drop into any chat",
   "permissions": [

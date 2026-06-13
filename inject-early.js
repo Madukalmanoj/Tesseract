@@ -1,4 +1,4 @@
-// ChatExtract Pro v4 — Page-context hook (MAIN world, document_start)
+// OmniExtract — Page-context hook (MAIN world, document_start)
 (function() {
   if (window.__cep) return;
   window.__cep = {

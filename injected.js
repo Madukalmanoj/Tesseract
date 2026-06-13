@@ -1,4 +1,4 @@
-// ChatExtract Pro — Page-context injected script
+// OmniExtract — Page-context injected script
 // Hooks into fetch/XHR to intercept Claude file URLs before they expire
 (function () {
   if (window.__cepInjected) return;
