@@ -511,6 +511,44 @@
             console.log("[CEP] __cepQuery: Conversation tree JSON data:", data);
             scanJsonForFiles(data);
             console.log("[CEP] __cepQuery: Parsed tree. idMap size:", Object.keys(window.__cep.idMap).length);
+            
+            // On-demand fetch file binaries programmatically in the page context (same-origin, cookie & auth-safe!)
+            for (const [fileId, filename] of Object.entries(window.__cep.idMap)) {
+              const k = filename.toLowerCase().trim();
+              // Only download files starting with 'file-' (valid OpenAI storage IDs)
+              if (!window.__cep.files[k] && typeof fileId === 'string' && fileId.startsWith('file-')) {
+                console.log("[CEP] On-demand page-context fetching file:", filename, fileId);
+                try {
+                  const dlRes = await _fetch(`/backend-api/files/${fileId}/download?conversation_id=${convId}`, {
+                    headers: {
+                      'Authorization': window.__cep.authHeader,
+                      'accept': 'application/json'
+                    }
+                  });
+                  console.log("[CEP] On-demand download response for:", filename, dlRes.status);
+                  if (dlRes.ok) {
+                    const dlMeta = await dlRes.json();
+                    const downloadUrl = dlMeta.download_url || dlMeta.downloadUrl || dlMeta.url;
+                    if (downloadUrl) {
+                      const fileHeaders = { 'accept': '*/*' };
+                      if (downloadUrl.includes('/backend-api/') && window.__cep.authHeader) {
+                        fileHeaders['Authorization'] = window.__cep.authHeader;
+                      }
+                      const fileRes = await _fetch(downloadUrl, { headers: fileHeaders });
+                      console.log("[CEP] On-demand content response for:", filename, fileRes.status);
+                      if (fileRes.ok) {
+                        const buffer = await fileRes.arrayBuffer();
+                        const dataUrl = await toDataUrl(buffer, fileRes.headers.get('content-type'));
+                        save(filename, dataUrl, fileRes.headers.get('content-type'), downloadUrl);
+                        console.log("[CEP] On-demand successfully saved file:", filename);
+                      }
+                    }
+                  }
+                } catch(e) {
+                  console.warn("[CEP] Failed on-demand fetch for file:", filename, e);
+                }
+              }
+            }
           }
         } catch(e) {
           console.warn("[CEP] On-demand conversation fetch failed:", e);

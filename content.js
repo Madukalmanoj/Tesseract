@@ -887,39 +887,7 @@ async function extractAll() {
   const {files:store, authHeader, idMap} = await getStore();
   console.log("[CEP] extractAll - Store keys:", Object.keys(store || {}), "hasAuth:", !!authHeader, "idMap:", idMap);
   
-  // On ChatGPT, programmatically fetch all missing files via background service worker (safely bypassing CSP/CORS)
-  if (PLAT === 'chatgpt' && authHeader && idMap) {
-    const cMatch = location.pathname.match(/\/c\/([a-f0-9-]{36})/);
-    const conversationId = cMatch ? cMatch[1] : null;
-    
-    for (const [fileId, filename] of Object.entries(idMap)) {
-      const k = filename.toLowerCase().trim();
-      // If we don't have the file binary yet (or it has no dataUrl)
-      if (!store[k] || !store[k].dataUrl) {
-        console.log("[CEP] Background fetching missing file:", filename, fileId, "convId:", conversationId);
-        try {
-          const r = await bg('fetchChatGPTFile', { fileId, authHeader, conversationId });
-          if (r && !r.error && r.dataUrl) {
-            const fileEntry = {
-              dataUrl: r.dataUrl,
-              mimeType: r.mimeType,
-              filename: r.filename || filename,
-              url: r.url || ''
-            };
-            store[k] = fileEntry;
-            // Also register under name without extension
-            const noext = k.replace(/\.[^.]+$/,'');
-            if (noext !== k) store[noext] = fileEntry;
-            console.log("[CEP] Background successfully fetched file:", filename);
-          } else {
-            console.warn("[CEP] Background fetch failed for:", filename, r?.error);
-          }
-        } catch(e) {
-          console.warn("[CEP] Background fetch error for:", filename, e);
-        }
-      }
-    }
-  }
+
 
   const consumedStore = new Set();
 
