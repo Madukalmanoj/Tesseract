@@ -368,7 +368,14 @@
         let blob=null;
         if (this.response instanceof Blob) blob=this.response;
         else if (this.response instanceof ArrayBuffer) blob=new Blob([this.response],{type:ct});
-        else if (typeof this.response==='string'&&this.response.length>100) blob=new Blob([this.response],{type:ct});
+        else if (typeof this.response==='string'&&this.response.length>100) {
+          const len = this.response.length;
+          const u8arr = new Uint8Array(len);
+          for (let i = 0; i < len; i++) {
+            u8arr[i] = this.response.charCodeAt(i) & 0xff;
+          }
+          blob = new Blob([u8arr],{type:ct});
+        }
         if (!blob||blob.size<100) return;
         b64(blob).then(dataUrl=>{
           let name=getName(url);

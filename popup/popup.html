@@ -85,6 +85,8 @@ body{width:380px;min-height:420px;background:var(--bg);color:var(--t);
 .file-list{margin-top:10px;background:var(--s1);border:1px solid var(--b);border-radius:8px;overflow:hidden;display:none}
 .file-list-hdr{padding:7px 10px;border-bottom:1px solid var(--b);font-size:11px;color:var(--t2)}
 .file-item{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--b);font-size:11px}
+.file-item.clickable:hover{background:var(--s2);cursor:pointer}
+.file-item.clickable:hover .file-name{color:var(--t)}
 .file-item:last-child{border-bottom:none}
 .file-icon{font-size:14px;flex-shrink:0}
 .file-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--t2)}

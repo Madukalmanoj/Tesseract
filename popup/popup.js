@@ -247,7 +247,13 @@ function renderExtractResults(data, refinedText) {
       const icon = ext === "pdf" ? "📄" : ext === "zip" ? "🗜" : ["doc","docx"].includes(ext) ? "📝" : ["xls","xlsx"].includes(ext) ? "📊" : "📎";
       const hasData = !!f.dataUrl;
       const div = document.createElement("div");
-      div.className = "file-item";
+      div.className = "file-item" + (hasData ? " clickable" : "");
+      if (hasData) {
+        div.title = "Click to download " + f.name;
+        div.addEventListener("click", () => {
+          chrome.runtime.sendMessage({ action: "downloadDataUrl", dataUrl: f.dataUrl, filename: f.name });
+        });
+      }
       div.innerHTML = `
         <span class="file-icon">${icon}</span>
         <span class="file-name" title="${esc(f.name)}">${esc(f.name)}</span>
