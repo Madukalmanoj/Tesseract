@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>ChatExtract Pro</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f0f10;--s1:#1a1a1e;--s2:#232328;--s3:#2a2a30;
+  --b:rgba(255,255,255,0.08);--b2:rgba(255,255,255,0.14);
+  --t:#f0eff4;--t2:#9997a8;--t3:#55536a;
+  --acc:#7c6af7;--acc2:#5d9cf5;--green:#3ecf8e;--red:#f87171;--amber:#f59e0b;
+  --r:10px;
+}
+body{width:380px;min-height:420px;background:var(--bg);color:var(--t);
+  font-family:'SF Pro Text','Segoe UI',system-ui,sans-serif;font-size:13px}
+
+/* Header */
+.hdr{padding:12px 14px 10px;border-bottom:1px solid var(--b);display:flex;align-items:center;gap:10px}
+.logo{width:26px;height:26px;border-radius:7px;flex-shrink:0;background:linear-gradient(135deg,var(--acc),var(--acc2));display:flex;align-items:center;justify-content:center;font-size:13px}
+.hdr-info h1{font-size:13px;font-weight:600;letter-spacing:-.2px}
+.hdr-info p{font-size:10px;color:var(--t3)}
+.plat{margin-left:auto;font-size:10px;font-weight:600;letter-spacing:.5px;padding:3px 8px;border-radius:20px;border:1px solid var(--b);color:var(--t3);text-transform:uppercase}
+.plat.claude{color:#f0a070;border-color:rgba(240,160,112,.3);background:rgba(240,160,112,.07)}
+.plat.chatgpt{color:var(--green);border-color:rgba(62,207,142,.3);background:rgba(62,207,142,.07)}
+.plat.gemini{color:#3f8ef6;border-color:rgba(63,142,246,.3);background:rgba(63,142,246,.07)}
+.plat.grok{color:#faf9f5;border-color:rgba(250,249,245,.3);background:rgba(250,249,245,.07)}
+
+/* Tabs */
+.tabs{display:flex;border-bottom:1px solid var(--b)}
+.tab{flex:1;padding:9px 0;font-size:11px;font-weight:500;color:var(--t3);background:none;border:none;cursor:pointer;letter-spacing:.2px;border-bottom:2px solid transparent;transition:all .15s}
+.tab.active{color:var(--t);border-bottom-color:var(--acc)}
+.tab:hover:not(.active){color:var(--t2)}
+.panel{display:none;padding:14px}
+.panel.active{display:block}
+
+/* Common */
+.label{font-size:10px;font-weight:600;letter-spacing:.7px;text-transform:uppercase;color:var(--t3);margin-bottom:7px}
+.row{display:flex;gap:6px;margin-bottom:12px}
+.tog{flex:1;padding:7px 0;border-radius:8px;background:var(--s1);border:1px solid var(--b);color:var(--t3);font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;transition:all .15s}
+.tog.on{background:var(--s2);border-color:var(--acc);color:var(--t)}
+.btn{width:100%;padding:10px;border:none;border-radius:var(--r);cursor:pointer;font-size:13px;font-weight:600;letter-spacing:-.2px;transition:opacity .15s,transform .1s}
+.btn:active{transform:scale(.98)}
+.btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.btn-primary{background:linear-gradient(135deg,var(--acc),var(--acc2));color:#fff}
+.btn-green{background:var(--green);color:#000}
+.btn-secondary{background:var(--s1);border:1px solid var(--b);color:var(--t)}
+.btn-secondary:hover{background:var(--s2)}
+
+.status{margin-top:10px;padding:9px 12px;border-radius:8px;font-size:12px;display:none;line-height:1.5}
+.status.info{background:rgba(124,106,247,.1);color:#a99cf9;border:1px solid rgba(124,106,247,.2)}
+.status.ok{background:rgba(62,207,142,.1);color:var(--green);border:1px solid rgba(62,207,142,.2)}
+.status.err{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.2)}
+.status.warn{background:rgba(245,158,11,.1);color:var(--amber);border:1px solid rgba(245,158,11,.2)}
+
+/* LLM section */
+.llm-section{background:var(--s1);border:1px solid var(--b);border-radius:var(--r);padding:12px;margin-bottom:12px}
+.llm-section-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.llm-toggle{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;cursor:pointer}
+.llm-toggle input[type=checkbox]{accent-color:var(--acc);width:14px;height:14px;cursor:pointer}
+.llm-section-body{display:none}
+.llm-section.expanded .llm-section-body{display:block}
+.provider-tabs{display:flex;gap:5px;margin-bottom:10px}
+.pvt{flex:1;padding:6px;border-radius:8px;background:var(--s2);border:1px solid var(--b);color:var(--t3);font-size:11px;font-weight:500;cursor:pointer;text-align:center;transition:all .15s}
+.pvt.sel{border-color:var(--acc);color:var(--acc);background:rgba(124,106,247,.08)}
+.key-row{display:flex;gap:6px;align-items:center;margin-bottom:10px}
+.key-row input{flex:1;padding:7px 10px;background:var(--s2);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px;font-family:inherit;outline:none;transition:border-color .15s}
+.key-row input:focus{border-color:var(--acc)}
+.key-show{padding:6px 8px;background:none;border:1px solid var(--b);border-radius:6px;color:var(--t3);cursor:pointer;font-size:10px}
+.key-show:hover{color:var(--t)}
+
+/* stats row */
+.stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin:12px 0}
+.stat{background:var(--s1);border:1px solid var(--b);border-radius:8px;padding:8px;text-align:center}
+.stat .v{font-size:18px;font-weight:700}
+.stat .k{font-size:10px;color:var(--t3);margin-top:1px}
+
+/* action grid */
+.actgrid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:2px}
+.abtn{padding:8px 10px;background:var(--s1);border:1px solid var(--b);color:var(--t);font-size:12px;cursor:pointer;border-radius:8px;display:flex;align-items:center;gap:6px;transition:background .15s}
+.abtn:hover{background:var(--s2)}
+.abtn:disabled{opacity:.4;cursor:not-allowed}
+
+/* file list */
+.file-list{margin-top:10px;background:var(--s1);border:1px solid var(--b);border-radius:8px;overflow:hidden;display:none}
+.file-list-hdr{padding:7px 10px;border-bottom:1px solid var(--b);font-size:11px;color:var(--t2)}
+.file-item{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--b);font-size:11px}
+.file-item:last-child{border-bottom:none}
+.file-icon{font-size:14px;flex-shrink:0}
+.file-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--t2)}
+.file-badge{font-size:9px;padding:2px 5px;border-radius:4px;font-weight:600}
+.file-badge.ok{background:rgba(62,207,142,.15);color:var(--green)}
+.file-badge.chip{background:rgba(245,158,11,.15);color:var(--amber)}
+
+/* image preview */
+.img-preview{margin-top:10px;background:var(--s1);border:1px solid var(--b);border-radius:8px;overflow:hidden;display:none}
+.img-preview-hdr{padding:7px 10px;border-bottom:1px solid var(--b);font-size:11px;color:var(--t2);display:flex;justify-content:space-between}
+.img-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;padding:7px;max-height:100px;overflow-y:auto}
+.img-thumb{aspect-ratio:1;border-radius:5px;overflow:hidden;border:1px solid var(--b);cursor:pointer}
+.img-thumb img{width:100%;height:100%;object-fit:cover}
+
+/* capsule name row */
+.capsule-name-row{margin-top:12px;margin-bottom:0}
+.capsule-name-row input{width:100%;padding:8px 10px;background:var(--s1);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px;font-family:inherit;outline:none;transition:border-color .15s}
+.capsule-name-row input:focus{border-color:var(--acc)}
+
+/* capsule panel */
+.cap-toolbar{display:flex;gap:6px;margin-bottom:10px}
+.cap-search{flex:1;padding:7px 10px;background:var(--s1);border:1px solid var(--b);border-radius:8px;color:var(--t);font-size:12px;outline:none}
+.cap-search:focus{border-color:var(--acc)}
+.cap-show-btn{padding:7px 10px;background:var(--acc);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
+.cap-show-btn:hover{opacity:.9}
+.cap-list{display:flex;flex-direction:column;gap:6px;max-height:320px;overflow-y:auto}
+.cap-card{background:var(--s1);border:1px solid var(--b);border-radius:10px;padding:10px 12px;transition:all .15s;position:relative}
+.cap-card:hover{background:var(--s2);border-color:var(--b2)}
+.cap-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cap-meta{font-size:10px;color:var(--t3);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap}
+.cap-actions{display:flex;gap:4px;margin-top:8px}
+.cap-act{flex:1;padding:5px;border-radius:6px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid var(--b);background:var(--s2);color:var(--t2);text-align:center;transition:all .12s}
+.cap-act:hover{color:var(--t);border-color:var(--b2)}
+.cap-act.drop{background:rgba(124,106,247,.12);border-color:rgba(124,106,247,.35);color:var(--acc)}
+.cap-act.drop:hover{background:rgba(124,106,247,.2)}
+.cap-act.del{color:var(--red);border-color:rgba(248,113,113,.2)}
+.cap-act.del:hover{background:rgba(248,113,113,.1)}
+.cap-empty{color:var(--t3);font-size:12px;text-align:center;padding:30px 0}
+
+.spin{display:inline-block;width:11px;height:11px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:sp .5s linear infinite;vertical-align:middle;margin-right:5px}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+  /* Teleport Section */
+  .teleport-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .tport-btn {
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--b);
+    color: var(--t);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: var(--s1);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .tport-btn:active {
+    transform: scale(0.96);
+  }
+  .tport-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none !important;
+    box-shadow: none !important;
+    border-color: var(--b) !important;
+    background: var(--s1) !important;
+  }
+  .tport-btn.claude:hover:not(:disabled) {
+    border-color: #f0a070;
+    background: rgba(240, 160, 112, 0.08);
+    box-shadow: 0 0 12px rgba(240, 160, 112, 0.15);
+  }
+  .tport-btn.chatgpt:hover:not(:disabled) {
+    border-color: var(--green);
+    background: rgba(62, 207, 142, 0.08);
+    box-shadow: 0 0 12px rgba(62, 207, 142, 0.15);
+  }
+  .tport-btn.gemini:hover:not(:disabled) {
+    border-color: #8ab4f8;
+    background: rgba(138, 180, 248, 0.08);
+    box-shadow: 0 0 12px rgba(138, 180, 248, 0.15);
+  }
+  .tport-btn.grok:hover:not(:disabled) {
+    border-color: #fff;
+    background: rgba(255, 255, 255, 0.06);
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.10);
+  }
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="logo">⬡</div>
+  <div class="hdr-info"><h1>ChatExtract Pro</h1><p>Extract · Refine · Drop</p></div>
+  <span class="plat" id="platBadge">—</span>
+</div>
+
+<div class="tabs">
+  <button class="tab active" data-tab="extract">Extract</button>
+  <button class="tab" data-tab="capsules">💊 Capsules</button>
+</div>
+
+<!-- ══════════════════════ EXTRACT TAB ══════════════════════ -->
+<div class="panel active" id="tab-extract">
+
+  <!-- LLM Auto-Refine section (collapsible) -->
+  <div class="llm-section" id="llmSection">
+    <div class="llm-section-hdr">
+      <label class="llm-toggle">
+        <input type="checkbox" id="llmEnabled"> Auto-refine with LLM
+      </label>
+      <span id="llmProviderBadge" style="font-size:10px;color:var(--t3)"></span>
+    </div>
+    <div class="llm-section-body" id="llmBody">
+      <div class="provider-tabs">
+        <button class="pvt sel" data-prov="groq">⚡ Groq</button>
+        <button class="pvt" data-prov="anthropic">🟠 Anthropic</button>
+        <button class="pvt" data-prov="gemini">✦ Gemini</button>
+      </div>
+      <div class="key-row">
+        <input type="password" id="apiKeyInput" placeholder="Paste API key…" autocomplete="off"/>
+        <button class="key-show" id="toggleKey">show</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Capsule name -->
+  <div class="capsule-name-row" style="margin-bottom:12px">
+    <input type="text" id="capNameInput" placeholder="Capsule name (auto-filled)…"/>
+  </div>
+
+  <button class="btn btn-primary" id="btnExtract">⬡ Extract + Save Capsule</button>
+  <div class="status" id="extractStatus"></div>
+
+  <!-- Extract & Teleport Section -->
+  <div class="label" style="margin-top: 16px; margin-bottom: 8px;">🚀 Extract & Teleport To</div>
+  <div class="teleport-grid">
+    <button class="tport-btn claude" data-target="claude" title="Teleport to Claude">
+      <span style="font-size:14px">🟠</span> Claude
+    </button>
+    <button class="tport-btn chatgpt" data-target="chatgpt" title="Teleport to ChatGPT">
+      <span style="font-size:14px">🟢</span> ChatGPT
+    </button>
+    <button class="tport-btn gemini" data-target="gemini" title="Teleport to Gemini">
+      <span style="font-size:14px">✦</span> Gemini
+    </button>
+    <button class="tport-btn grok" data-target="grok" title="Teleport to Grok">
+      <span style="font-size:14px">⚡</span> Grok
+    </button>
+  </div>
+
+  <div id="extractResults" style="display:none">
+    <div class="stats">
+      <div class="stat"><div class="v" id="sMsg">0</div><div class="k">Messages</div></div>
+      <div class="stat"><div class="v" id="sImg">0</div><div class="k">Images</div></div>
+      <div class="stat"><div class="v" id="sFile">0</div><div class="k">Files</div></div>
+    </div>
+
+    <!-- File list -->
+    <div class="file-list" id="fileList">
+      <div class="file-list-hdr">📎 Attached Files</div>
+      <div id="fileItems"></div>
+    </div>
+
+    <div class="actgrid" style="margin-top:10px">
+      <button class="abtn" id="btnCopy">📋 Copy Text</button>
+      <button class="abtn" id="btnTxt">⬇ Save .txt</button>
+      <button class="abtn" id="btnJson">⬇ Save JSON</button>
+      <button class="abtn" id="btnImgs" disabled>🖼 Save Images</button>
+    </div>
+
+    <div class="img-preview" id="imgPreview" style="display:none">
+      <div class="img-preview-hdr"><span>Images</span><span id="imgPreviewCount" style="color:var(--acc)"></span></div>
+      <div class="img-grid" id="imgGrid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ CAPSULES TAB ══════════════════════ -->
+<div class="panel" id="tab-capsules">
+  <div class="cap-toolbar">
+    <input class="cap-search" id="capSearch" type="text" placeholder="Search capsules…"/>
+    <button class="cap-show-btn" id="btnShowTray">Show on Page</button>
+  </div>
+  <div class="cap-list" id="capList"></div>
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>

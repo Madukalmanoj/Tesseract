@@ -1,0 +1,85 @@
+{
+  "manifest_version": 3,
+  "name": "ChatExtract Pro",
+  "version": "3.2.0",
+  "description": "Extract chats → auto-refine with LLM → save as capsules → drop into any chat",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "downloads",
+    "storage",
+    "unlimitedStorage",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "https://claude.ai/*",
+    "https://api2.claude.ai/*",
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://files.oaiusercontent.com/*",
+    "https://images.openai.com/*",
+    "https://*.openai.com/*",
+    "https://api.anthropic.com/*",
+    "https://api.groq.com/*",
+    "https://generativelanguage.googleapis.com/*",
+    "https://gemini.google.com/*",
+    "https://grok.com/*",
+    "https://*.grok.com/*",
+    "https://*.googleusercontent.com/*"
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://claude.ai/*",
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://gemini.google.com/*",
+        "https://grok.com/*"
+      ],
+      "js": ["inject-early.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://claude.ai/*"
+      ],
+      "js": ["o200k_base.js", "claude-counter-content.js", "content.js"],
+      "css": ["claude-counter.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://gemini.google.com/*",
+        "https://grok.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["injected.js"],
+      "matches": [
+        "https://claude.ai/*",
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://gemini.google.com/*",
+        "https://grok.com/*"
+      ]
+    }
+  ]
+}
