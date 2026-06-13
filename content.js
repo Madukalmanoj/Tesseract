@@ -48,13 +48,31 @@ function getOrgId() {
 }
 
 // ── Fuzzy store lookup ───────────────────────────────────────────────────────
-function fromStore(name, store) {
+function fromStore(name, store, consumedStore = new Set()) {
   if (!store||!name) return null;
-  const k = name.toLowerCase().trim();
-  if (store[k]) return store[k];
+  const cleanName = name.replace(/^\d{10,13}_/, '');
+  const k = cleanName.toLowerCase().trim();
+  
+  if (store[k] && !consumedStore.has(store[k])) return store[k];
+  if (store[k + '.txt'] && !consumedStore.has(store[k + '.txt'])) return store[k + '.txt'];
+  
   const noext = k.replace(/\.[^.]+$/,'');
+  
+  // Special fuzzy match for ZIP files represented as literally "ZIP"
+  if (k === 'zip') {
+    for (const [sk, sv] of Object.entries(store)) {
+      if (consumedStore.has(sv)) continue;
+      if (sk.endsWith('.zip')) return sv;
+    }
+  }
+  
+  const commonExts = ['pdf', 'docx', 'doc', 'zip', 'xlsx', 'xls', 'pptx', 'ppt', 'txt', 'csv', 'py', 'json', 'sh', 'js', 'html', 'css', 'md'];
+
   for (const [sk,sv] of Object.entries(store)) {
-    if (sk===noext||sk.includes(noext)||noext.includes(sk.replace(/\.[^.]+$/,''))) return sv;
+    if (consumedStore.has(sv)) continue;
+    if (sk===noext) return sv;
+    if (!commonExts.includes(noext) && sk.includes(noext)) return sv;
+    if (noext.includes(sk.replace(/\.[^.]+$/,''))) return sv;
   }
   return null;
 }
@@ -283,6 +301,20 @@ const SEL = {
   grok:    { input: 'textarea, div[role="textbox"][contenteditable="true"]' }
 };
 
+function cleanAttachmentName(name) {
+  if (!name) return name;
+  let clean = name.replace(/^\d{10,13}_/, '').trim();
+  // If the filename contains a comma followed by file metadata (e.g. "file.docx, docx, 72 lines")
+  const commaIdx = clean.search(/\.(pdf|docx?|zip|xlsx?|pptx?|txt|csv|py|json|sh|js|html|css|md),\s*/i);
+  if (commaIdx !== -1) {
+    const extMatch = clean.slice(commaIdx).match(/^\.(pdf|docx?|zip|xlsx?|pptx?|txt|csv|py|json|sh|js|html|css|md)/i);
+    if (extMatch) {
+      clean = clean.slice(0, commaIdx + extMatch[0].length);
+    }
+  }
+  return clean;
+}
+
 // Check if an element or its ancestor is part of the UI container or noise
 function isInsideUI(el) {
   if (!el) return false;
@@ -426,13 +458,28 @@ function resolveImageSrc(img) {
 }
 
 // ── Extract images from a turn (bg proxy for CORS) ──────────────────────────
-async function extractImages(turn) {
+async function extractImages(turn, idMap = {}) {
   const imgs = [];
   const allImgs = turn.querySelectorAll('img');
   console.log('[CEP] Found', allImgs.length, 'total images in turn');
   for (const img of allImgs) {
     const src = resolveImageSrc(img);
     const sl = src.toLowerCase();
+
+    // Skip document previews (PDF, DOCX, ZIP thumbnails, etc.)
+    const uuidMatch = src.match(/\/files\/([a-f0-9-]{36})/);
+    if (uuidMatch) {
+      const fileId = uuidMatch[1];
+      const mappedName = idMap[fileId];
+      if (mappedName) {
+        const ext = mappedName.split('.').pop()?.toLowerCase();
+        const nonImageExts = ['pdf', 'docx', 'doc', 'zip', 'xlsx', 'xls', 'pptx', 'ppt', 'txt', 'csv', 'py', 'json', 'sh', 'js', 'html', 'css', 'md'];
+        if (nonImageExts.includes(ext)) {
+          console.log('[CEP] Skipped document preview image:', mappedName);
+          continue;
+        }
+      }
+    }
 
     // Log all attributes of the img element to the console for debugging
     const attrs = {};
@@ -537,37 +584,28 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
     for (const chip of turn.querySelectorAll('[class*="FileCard"],[class*="AttachmentTile"],[class*="file-tile"],[data-message-file-name]')) {
       if (isInsideUI(chip)) continue;
       const name = chip.dataset?.messageFileName || chipText(chip);
-      if (!name || isUINoiseFileName(name)) continue;
-      if (turnChips.some(c => c.name.toLowerCase() === name.toLowerCase())) continue;
-      turnChips.push({ name, chip });
+      if (!name) continue;
+      
+      const nameLower = name.toLowerCase().trim();
+      const hasDot = nameLower.includes('.');
+      const isSpecial = nameLower === 'zip' || nameLower === 'pasted';
+      if (!hasDot && !isSpecial) continue;
+      
+      const cleanName = name.replace(/^\d{10,13}_/, '');
+      if (isUINoiseFileName(cleanName)) continue;
+      if (turnChips.some(c => c.name.toLowerCase() === cleanName.toLowerCase())) continue;
+      turnChips.push({ name: cleanName, chip });
     }
 
     const unmatchedChips = [];
     for (const item of turnChips) {
-      const nameLower = item.name.toLowerCase().trim();
-      let matchedStored = null;
-      
-      // 1. Try exact match
-      if (store[nameLower] && !consumedStore.has(store[nameLower])) {
-        matchedStored = store[nameLower];
-      } else {
-        // 2. Try fuzzy match
-        const noext = nameLower.replace(/\.[^.]+$/, '');
-        for (const [sk, sv] of Object.entries(store)) {
-          if (consumedStore.has(sv)) continue;
-          if (sk === noext || sk.includes(noext) || noext.includes(sk.replace(/\.[^.]+$/, ''))) {
-            matchedStored = sv;
-            break;
-          }
-        }
-      }
-      
-      if (matchedStored) {
-        consumedStore.add(matchedStored);
+      const stored = fromStore(item.name, store, consumedStore);
+      if (stored) {
+        consumedStore.add(stored);
         add({
-          name: item.name,
-          dataUrl: matchedStored.dataUrl,
-          mimeType: matchedStored.mimeType,
+          name: stored.filename || item.name,
+          dataUrl: stored.dataUrl,
+          mimeType: stored.mimeType,
           source: 'chip-matched',
           note: '✓ data'
         });
@@ -602,7 +640,7 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
         const storedFile = unmatchedGenericStored.splice(gIdx, 1)[0];
         consumedStore.add(storedFile);
         add({
-          name: chipItem.name,
+          name: storedFile.filename || chipItem.name,
           dataUrl: storedFile.dataUrl,
           mimeType: storedFile.mimeType,
           source: 'chip-paired-ext',
@@ -619,7 +657,7 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
       const storedFile = unmatchedGenericStored[idx];
       consumedStore.add(storedFile);
       add({
-        name: chipItem.name,
+        name: storedFile.filename || chipItem.name,
         dataUrl: storedFile.dataUrl,
         mimeType: storedFile.mimeType,
         source: 'chip-paired-fallback',
@@ -651,13 +689,23 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
       for (const chip of turn.querySelectorAll(sel)) {
         if (isInsideUI(chip)) continue;
         const name = chipText(chip);
-        if (!name||isUINoiseFileName(name)||seen.has(name.toLowerCase())) continue;
-        const fd = {name, source:'claude-chip', note:'name only'};
+        if (!name) continue;
+        
+        // Filter out dummy chips (must contain a dot or be a special identifier)
+        const nameLower = name.toLowerCase().trim();
+        const hasDot = nameLower.includes('.');
+        const isSpecial = nameLower === 'zip' || nameLower === 'pasted';
+        if (!hasDot && !isSpecial) continue;
+        
+        const cleanName = name.replace(/^\d{10,13}_/, '');
+        if (isUINoiseFileName(cleanName) || seen.has(cleanName.toLowerCase())) continue;
+        const fd = {name: cleanName, source:'claude-chip', note:'name only'};
 
         // Check store first
-        const stored = fromStore(name, store);
-        if (stored && !consumedStore.has(stored)) {
+        const stored = fromStore(cleanName, store, consumedStore);
+        if (stored) {
           consumedStore.add(stored);
+          fd.name = stored.filename || fd.name;
           fd.dataUrl=stored.dataUrl;
           fd.mimeType=stored.mimeType;
           fd.note='✓ intercepted';
@@ -677,7 +725,7 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
 
         if (fileId && orgId) {
           // Register name with page hook
-          window.dispatchEvent(new CustomEvent('__cepRegName',{detail:{fileId,filename:name}}));
+          window.dispatchEvent(new CustomEvent('__cepRegName',{detail:{fileId,filename:cleanName}}));
           // Try Claude Files API via background
           for (const suf of ['/content','']) {
             const url=`https://api2.claude.ai/api/organizations/${orgId}/files/${fileId}${suf}`;
@@ -713,11 +761,12 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
         if (isInsideUI(chip)) continue;
         const name = chipText(chip);
         if (!name) continue;
-        const cleanName = name.trim();
+        const cleanName = name.replace(/^\d{10,13}_/, '');
         
-        // For generic elements, require a standard file extension to prevent false positives
-        const hasExt = /\.(pdf|docx?|zip|tar|gz|csv|xlsx?|pptx?|txt|py|json|png|jpe?g|gif|webp|sh|js|html|css|md)$/i.test(cleanName);
-        if (!hasExt) continue;
+        const nameLower = cleanName.toLowerCase().trim();
+        const hasDot = nameLower.includes('.');
+        const isSpecial = nameLower === 'zip' || nameLower === 'pasted';
+        if (!hasDot && !isSpecial) continue;
         
         if (isUINoiseFileName(cleanName) || seen.has(cleanName.toLowerCase())) continue;
         if (turnChips.some(c => c.name.toLowerCase() === cleanName.toLowerCase())) continue;
@@ -727,11 +776,11 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
 
     const unmatchedChips = [];
     for (const item of turnChips) {
-      const stored = fromStore(item.name, store);
-      if (stored && !consumedStore.has(stored)) {
+      const stored = fromStore(item.name, store, consumedStore);
+      if (stored) {
         consumedStore.add(stored);
         add({
-          name: item.name,
+          name: stored.filename || item.name,
           dataUrl: stored.dataUrl,
           mimeType: stored.mimeType,
           source: PLAT + '-chip-matched',
@@ -768,7 +817,7 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
         const storedFile = unmatchedGenericStored.splice(gIdx, 1)[0];
         consumedStore.add(storedFile);
         add({
-          name: chipItem.name,
+          name: storedFile.filename || chipItem.name,
           dataUrl: storedFile.dataUrl,
           mimeType: storedFile.mimeType,
           source: PLAT + '-chip-paired-ext',
@@ -785,7 +834,7 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
       const storedFile = unmatchedGenericStored[idx];
       consumedStore.add(storedFile);
       add({
-        name: chipItem.name,
+        name: storedFile.filename || chipItem.name,
         dataUrl: storedFile.dataUrl,
         mimeType: storedFile.mimeType,
         source: PLAT + '-chip-paired-fallback',
@@ -913,7 +962,7 @@ async function extractAll() {
     if (textKey && seenTexts.has(textKey)) continue;
     if (textKey) seenTexts.add(textKey);
 
-    const images= await extractImages(turn);
+    const images= await extractImages(turn, idMap);
     const files = await extractFiles(turn, store, orgId, consumedStore);
 
     result.allImages.push(...images);
@@ -964,11 +1013,20 @@ function dataUrlToFile(dataUrl, name) {
     const arr = dataUrl.split(',');
     const mimeMatch = arr[0].match(/:(.*?);/);
     const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
-    const bstr = atob(arr[1]);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    while (n--) {
-      u8arr[n] = bstr.charCodeAt(n);
+    const isBase64 = arr[0].includes('base64');
+    
+    let u8arr;
+    if (isBase64) {
+      const bstr = atob(arr[1]);
+      let n = bstr.length;
+      u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+    } else {
+      const decoded = decodeURIComponent(arr[1]);
+      const encoder = new TextEncoder();
+      u8arr = encoder.encode(decoded);
     }
     return new File([u8arr], name, { type: mime });
   } catch (e) {

@@ -5,16 +5,26 @@
     files: {},      // lcName → {dataUrl,mimeType,filename,url}
     urlMap: {},     // downloadUrl → filename (set from /download JSON)
     idMap:  {},     // fileId → filename
+    downloadUrlMap: {}, // fileId → downloadUrl (to fetch via background if CORS fails)
+    extractedContentMap: {}, // fileId → extracted_content text fallback
     orgId:  null,
-    authHeader: null
+    authHeader: null,
+    oaiHeaders: {},
+    lastConvId: null
   };
 
-  // Hook setRequestHeader to capture Authorization headers in XHR
+  // Hook setRequestHeader to capture Authorization and OAI headers in XHR
   const _xsetHeader = XMLHttpRequest.prototype.setRequestHeader;
   XMLHttpRequest.prototype.setRequestHeader = function(header, value) {
-    if (header && header.toLowerCase() === 'authorization') {
-      window.__cep.authHeader = value;
-      console.log("[CEP] Captured XHR Authorization header:", value.slice(0, 20) + "...");
+    if (header) {
+      const hl = header.toLowerCase();
+      if (hl === 'authorization') {
+        window.__cep.authHeader = value;
+        console.log("[CEP] Captured XHR Authorization header:", value.slice(0, 20) + "...");
+      } else if (hl.startsWith('oai-')) {
+        window.__cep.oaiHeaders[hl] = value;
+        console.log("[CEP] Captured XHR OAI header:", header, value);
+      }
     }
     return _xsetHeader.apply(this, [header, value]);
   };
@@ -51,8 +61,34 @@
     });
   }
 
+  function findDownloadUrl(obj) {
+    if (!obj || typeof obj !== 'object') return null;
+    if (obj.download_url && typeof obj.download_url === 'string') return obj.download_url;
+    if (obj.downloadUrl && typeof obj.downloadUrl === 'string') return obj.downloadUrl;
+    if (obj.url && typeof obj.url === 'string' && (obj.url.startsWith('http') || obj.url.startsWith('/'))) return obj.url;
+    
+    for (const v of Object.values(obj)) {
+      if (typeof v === 'object') {
+        const res = findDownloadUrl(v);
+        if (res) return res;
+      }
+    }
+    return null;
+  }
+
   function save(name, dataUrl, mime, url) {
     if (!name || !dataUrl) return;
+    
+    // Clean timestamp prefix from name if present (e.g. 1781379147075_file.pdf -> file.pdf)
+    name = name.replace(/^\d{10,13}_/, '');
+    
+    // If it's a fallback extracted content for binary file, append .txt
+    const lowerName = name.toLowerCase();
+    const binaryExts = ['.docx', '.doc', '.xlsx', '.xls', '.pptx', '.ppt', '.pdf', '.zip', '.bin', '.png', '.jpg', '.jpeg', '.gif', '.webp'];
+    if (url === 'extracted-content' && binaryExts.some(ext => lowerName.endsWith(ext))) {
+      name = name + '.txt';
+    }
+    
     const k = name.toLowerCase().trim();
     
     // Guard rail: prevent saving HTML/JSON response content as binary files (e.g. PDF, ZIP, DOCX, images, etc.)
@@ -80,6 +116,40 @@
     window.dispatchEvent(new CustomEvent('__cepStored', {detail:{name,mime,url}}));
   }
 
+  async function inspectRequestBody(body, url) {
+    if (!body) return;
+    try {
+      if (body instanceof FormData) {
+        for (const [key, val] of body.entries()) {
+          if (val instanceof File) {
+            const name = val.name;
+            const mime = val.type;
+            const dataUrl = await toDataUrl(val, mime);
+            console.log("[CEP] Intercepted FormData file upload request body:", name, mime);
+            save(name, dataUrl, mime, url);
+          }
+        }
+      } else if (body instanceof File) {
+        const name = body.name;
+        const mime = body.type;
+        const dataUrl = await toDataUrl(body, mime);
+        console.log("[CEP] Intercepted File upload request body:", name, mime);
+        save(name, dataUrl, mime, url);
+      } else if (body instanceof Blob) {
+        let name = getName(url);
+        if (!name) {
+          name = 'upload_' + Date.now() + '.' + mext(body.type);
+        }
+        const mime = body.type;
+        const dataUrl = await toDataUrl(body, mime);
+        console.log("[CEP] Intercepted Blob upload request body:", name, mime);
+        save(name, dataUrl, mime, url);
+      }
+    } catch(e) {
+      console.warn("[CEP] Failed to inspect request body:", e);
+    }
+  }
+
   function urlsMatchFile(url1, url2) {
     if (!url1 || !url2) return false;
     if (url1 === url2) return true;
@@ -92,9 +162,9 @@
       const sig2 = u2.searchParams.get('sig');
       if (sig1 && sig2 && sig1 === sig2) return true;
 
-      // 2. Compare file-XXXXXX ID in path
-      const id1 = u1.pathname.match(/file-[a-zA-Z0-9]{8,}/);
-      const id2 = u2.pathname.match(/file-[a-zA-Z0-9]{8,}/);
+      // 2. Compare file-XXXXXX or file_XXXXXX ID in path
+      const id1 = u1.pathname.match(/file[-_][a-zA-Z0-9]{8,}/);
+      const id2 = u2.pathname.match(/file[-_][a-zA-Z0-9]{8,}/);
       if (id1 && id2 && id1[0] === id2[0]) return true;
 
       // 3. Fallback: compare pathname if not a generic estuary path
@@ -105,50 +175,115 @@
 
   function scanJsonForFiles(obj) {
     if (!obj || typeof obj !== 'object') return;
-    if (Array.isArray(obj)) {
-      for (let i = 0; i < obj.length; i++) scanJsonForFiles(obj[i]);
-      return;
-    }
     
-    // Gather all potential ID field values
-    const possibleIds = [
-      obj.file_id, obj.fileId, obj.file_uuid, obj.attachment_id, obj.attachmentId, obj.asset_pointer, obj.assetPointer,
-      obj.id, obj.uuid
-    ];
-    
-    // 1. Prefer values that start with 'file-' (true OpenAI download file IDs)
-    let id = null;
-    for (const val of possibleIds) {
-      if (typeof val === 'string' && val.startsWith('file-')) {
-        id = val;
-        break;
+    // Helper to find all file-like IDs in a subtree
+    function findIds(item, ids = []) {
+      if (!item) return ids;
+      const isChatGpt = window.location.hostname.includes('chatgpt.com');
+      if (typeof item === 'string') {
+        const isOaiFile = item.startsWith('file-') || item.startsWith('file_') || item.startsWith('libfile_');
+        const isClaudeFile = !isChatGpt && /^[a-f0-9-]{36}$/.test(item);
+        if (isOaiFile || isClaudeFile) {
+          ids.push(item);
+        }
+      } else if (Array.isArray(item)) {
+        for (let i = 0; i < item.length; i++) findIds(item[i], ids);
+      } else if (typeof item === 'object') {
+        for (const v of Object.values(item)) findIds(v, ids);
       }
+      return ids;
     }
-    // 2. Fallback to any truthy ID value
-    if (!id) {
-      for (const val of possibleIds) {
-        if (val) {
-          id = val;
-          break;
+    
+    // Helper to find all filenames in a subtree
+    const fileExts = ['pdf', 'zip', 'docx', 'xlsx', 'pptx', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bin', 'txt', 'csv', 'py', 'json', 'sh', 'js', 'html', 'css', 'md'];
+    function findNames(item, names = []) {
+      if (!item) return names;
+      if (typeof item === 'string') {
+        const clean = item.trim();
+        if (clean.includes('.')) {
+          const ext = clean.split('.').pop().toLowerCase();
+          if (fileExts.includes(ext) && clean.length < 255) {
+            names.push(clean);
+          }
+        }
+      } else if (Array.isArray(item)) {
+        for (let i = 0; i < item.length; i++) findNames(item[i], names);
+      } else if (typeof item === 'object') {
+        for (const [k, v] of Object.entries(item)) {
+          if (k === 'url' || k === 'download_url' || k === 'downloadUrl') continue;
+          findNames(v, names);
+        }
+      }
+      return names;
+    }
+
+    // Recursively scan objects. If an object contains both IDs and filenames in its subtree, pair them!
+    function processNode(node) {
+      if (!node || typeof node !== 'object') return;
+      if (Array.isArray(node)) {
+        for (let i = 0; i < node.length; i++) processNode(node[i]);
+        return;
+      }
+      
+      const isChatGpt = window.location.hostname.includes('chatgpt.com');
+      
+      if (!isChatGpt) {
+        // Claude: Pair ID and filename only if they are direct properties of this node
+        let fileId = node.id || node.uuid || node.file_id || node.fileId;
+        if (fileId && typeof fileId === 'string' && /^[a-f0-9-]{36}$/.test(fileId)) {
+          let filename = node.file_name || node.filename || node.fileName;
+          if (!filename && node.name && (node.file_size || node.fileSize || node.mime_type || node.mimeType || node.file_type || node.fileType)) {
+            filename = node.name;
+          }
+          if (filename && typeof filename === 'string') {
+            const clean = filename.trim().replace(/^\d{10,13}_/, '');
+            if (clean.includes('.')) {
+              const ext = clean.split('.').pop().toLowerCase();
+              if (fileExts.includes(ext) && clean.length < 255) {
+                window.__cep.idMap[fileId] = clean;
+                
+                if (node.extracted_content) {
+                  window.__cep.extractedContentMap[fileId] = node.extracted_content;
+                }
+                
+                let dlUrl = node.download_url || node.downloadUrl || node.url || null;
+                if (dlUrl && typeof dlUrl === 'string') {
+                  window.__cep.urlMap[dlUrl] = clean;
+                  try { window.__cep.urlMap[new URL(dlUrl, window.location.origin).href] = clean; } catch(_) {}
+                  window.__cep.downloadUrlMap[fileId] = dlUrl;
+                }
+              }
+            }
+          }
+        }
+      } else {
+        // ChatGPT: Recursive subtree scanning
+        const localIds = findIds(node);
+        const localNames = findNames(node);
+        
+        if (localIds.length > 0 && localNames.length > 0) {
+          for (const fileId of localIds) {
+            const filename = localNames[0].replace(/^\d{10,13}_/, '');
+            window.__cep.idMap[fileId] = filename;
+            
+            let dlUrl = node.download_url || node.downloadUrl || node.url || null;
+            if (dlUrl && typeof dlUrl === 'string') {
+              window.__cep.urlMap[dlUrl] = filename;
+              try { window.__cep.urlMap[new URL(dlUrl, window.location.origin).href] = filename; } catch(_) {}
+              window.__cep.downloadUrlMap[fileId] = dlUrl;
+            }
+          }
+        }
+      }
+      
+      for (const k in node) {
+        if (Object.prototype.hasOwnProperty.call(node, k)) {
+          processNode(node[k]);
         }
       }
     }
 
-    const name = obj.name || obj.filename || obj.file_name || obj.original_filename || obj.original_name ||
-                 obj.title || obj.original_title || obj.originalTitle || null;
-                 
-    const isFileId = (typeof id === 'string') && (id.startsWith('file-') || /^[a-f0-9-]{36}$/.test(id));
-    if (isFileId && typeof name === 'string' && name.includes('.')) {
-      window.__cep.idMap[id] = name;
-      const dlUrl = obj.download_url || obj.downloadUrl || obj.url || null;
-      if (dlUrl) {
-        window.__cep.urlMap[dlUrl] = name;
-        try { window.__cep.urlMap[new URL(dlUrl, window.location.origin).href] = name; } catch(_) {}
-      }
-    }
-    for (const k in obj) {
-      if (Object.prototype.hasOwnProperty.call(obj, k)) scanJsonForFiles(obj[k]);
-    }
+    processNode(obj);
   }
 
   function getName(url) {
@@ -210,6 +345,16 @@
     
     // Ignore API metadata/download JSON endpoints (not actual file binaries)
     if (u.includes('/backend-api/files/')) return false;
+
+    // Ignore JSON/HTML response content-types for API endpoints
+    if ((c.includes('json') || c.includes('html')) && (u.includes('/api/organizations/') || u.includes('/backend-api/'))) {
+      return false;
+    }
+
+    // Skip preview/thumbnail endpoints (these are document thumbnails, not the original files)
+    if (/\/files\/[a-f0-9-]{36}\/(preview|thumbnail)\b/.test(u) || u.endsWith('/preview') || u.includes('/preview?') || u.endsWith('/thumbnail') || u.includes('/thumbnail?')) {
+      return false;
+    }
 
     const fileUrl = u.includes('oaiusercontent') || u.includes('estuary') ||
       u.includes('/files/') || u.includes('file-service') ||
@@ -314,29 +459,55 @@
     const opts = args[1] || {};
     const url = typeof req==='string'?req:(req instanceof Request?req.url:String(req));
 
-    // Capture auth header
+    // Inspect request body if present (for capturing uploads)
+    if (opts.body) {
+      inspectRequestBody(opts.body, url).catch(_=>{});
+    }
+
+    // Capture auth and OAI headers
     let auth = null;
+    const oaiHeaders = {};
     if (opts.headers) {
       if (opts.headers instanceof Headers) {
         auth = opts.headers.get('Authorization') || opts.headers.get('authorization');
+        for (const [hk, hv] of opts.headers.entries()) {
+          if (hk.toLowerCase().startsWith('oai-')) {
+            oaiHeaders[hk.toLowerCase()] = hv;
+          }
+        }
       } else {
         for (const [hk, hv] of Object.entries(opts.headers)) {
-          if (hk.toLowerCase() === 'authorization') { auth = hv; break; }
+          if (hk.toLowerCase() === 'authorization') { auth = hv; }
+          if (hk.toLowerCase().startsWith('oai-')) {
+            oaiHeaders[hk.toLowerCase()] = hv;
+          }
         }
       }
     }
-    if (!auth && req instanceof Request && req.headers) {
+    if (req instanceof Request && req.headers) {
       if (req.headers instanceof Headers) {
-        auth = req.headers.get('Authorization') || req.headers.get('authorization');
+        if (!auth) auth = req.headers.get('Authorization') || req.headers.get('authorization');
+        for (const [hk, hv] of req.headers.entries()) {
+          if (hk.toLowerCase().startsWith('oai-')) {
+            oaiHeaders[hk.toLowerCase()] = hv;
+          }
+        }
       } else {
         for (const [hk, hv] of Object.entries(req.headers)) {
-          if (hk.toLowerCase() === 'authorization') { auth = hv; break; }
+          if (hk.toLowerCase() === 'authorization') { if (!auth) auth = hv; }
+          if (hk.toLowerCase().startsWith('oai-')) {
+            oaiHeaders[hk.toLowerCase()] = hv;
+          }
         }
       }
     }
     if (auth) {
       window.__cep.authHeader = auth;
       console.log("[CEP] Captured fetch Authorization header:", auth.slice(0, 20) + "...");
+    }
+    if (Object.keys(oaiHeaders).length > 0) {
+      Object.assign(window.__cep.oaiHeaders, oaiHeaders);
+      console.log("[CEP] Captured OAI headers:", Object.keys(oaiHeaders));
     }
 
     // org ID
@@ -433,6 +604,10 @@
     return _xopen.apply(this,[m,u,...r]);
   };
   XMLHttpRequest.prototype.send = function(...args) {
+    const body = args[0];
+    if (body) {
+      inspectRequestBody(body, this.__cepUrl).catch(_=>{});
+    }
     this.addEventListener('readystatechange', function() {
       if (this.readyState!==4||this.status<200||this.status>=300) return;
       try {
@@ -478,7 +653,7 @@
           if (base64Part.length < 100) return;
           let name = getName(url);
           if (!name) {
-            const idM = url.match(/file-([a-zA-Z0-9]{8})/);
+            const idM = url.match(/file[-_]([a-zA-Z0-9]{8})/);
             name = idM ? ('file_'+idM[1]+'.'+mext(ct)) : ('file.'+mext(ct));
           }
           save(name, dataUrl, ct, url);
@@ -495,8 +670,18 @@
     // 1. Try to fetch conversation history if authHeader is available and we are on a chatgpt conversation page
     if (window.__cep.authHeader && window.location.hostname.includes('chatgpt.com')) {
       const match = window.location.pathname.match(/\/c\/([a-f0-9-]{36})/);
-      if (match) {
-        const convId = match[1];
+      const convId = match ? match[1] : null;
+
+      // Clear store if we switched to a different conversation (or to a new chat)
+      if (window.__cep.lastConvId !== convId) {
+        console.log("[CEP] Conversation changed from", window.__cep.lastConvId, "to", convId, "- clearing file store.");
+        window.__cep.files = {};
+        window.__cep.idMap = {};
+        window.__cep.urlMap = {};
+        window.__cep.lastConvId = convId;
+      }
+
+      if (convId) {
         console.log("[CEP] __cepQuery: Fetching conversation tree for:", convId);
         try {
           const res = await _fetch(`/backend-api/conversation/${convId}`, {
@@ -508,41 +693,83 @@
           console.log("[CEP] __cepQuery: Conversation tree fetch status:", res.status);
           if (res.ok) {
             const data = await res.json();
-            console.log("[CEP] __cepQuery: Conversation tree JSON data:", data);
             scanJsonForFiles(data);
+             
             console.log("[CEP] __cepQuery: Parsed tree. idMap size:", Object.keys(window.__cep.idMap).length);
             
             // On-demand fetch file binaries programmatically in the page context (same-origin, cookie & auth-safe!)
             for (const [fileId, filename] of Object.entries(window.__cep.idMap)) {
               const k = filename.toLowerCase().trim();
-              // Only download files starting with 'file-' (valid OpenAI storage IDs)
-              if (!window.__cep.files[k] && typeof fileId === 'string' && fileId.startsWith('file-')) {
+              // Only download valid OpenAI storage IDs (starting with file-, file_ or libfile_)
+              const isOaiFile = typeof fileId === 'string' && (fileId.startsWith('file-') || fileId.startsWith('file_') || fileId.startsWith('libfile_'));
+              if (!window.__cep.files[k] && isOaiFile) {
                 console.log("[CEP] On-demand page-context fetching file:", filename, fileId);
                 try {
-                  const dlRes = await _fetch(`/backend-api/files/${fileId}/download?conversation_id=${convId}`, {
-                    headers: {
-                      'Authorization': window.__cep.authHeader,
-                      'accept': 'application/json'
-                    }
-                  });
-                  console.log("[CEP] On-demand download response for:", filename, dlRes.status);
-                  if (dlRes.ok) {
-                    const dlMeta = await dlRes.json();
-                    const downloadUrl = dlMeta.download_url || dlMeta.downloadUrl || dlMeta.url;
-                    if (downloadUrl) {
-                      const fileHeaders = { 'accept': '*/*' };
-                      if (downloadUrl.includes('/backend-api/') && window.__cep.authHeader) {
-                        fileHeaders['Authorization'] = window.__cep.authHeader;
+                  const reqHeaders = {
+                    'Authorization': window.__cep.authHeader,
+                    'accept': 'application/json',
+                    ...window.__cep.oaiHeaders
+                  };
+                  let dlRes = null;
+                  let dlMeta = null;
+                  let downloadUrl = null;
+                  
+                  const endpoints = [];
+                  if (typeof fileId === 'string' && fileId.startsWith('libfile_')) {
+                    endpoints.push(`/backend-api/files/library/${fileId}/download?conversation_id=${convId}`);
+                    endpoints.push(`/backend-api/files/library/${fileId}?conversation_id=${convId}`);
+                    endpoints.push(`/backend-api/files/${fileId}/download?conversation_id=${convId}`);
+                  } else {
+                    endpoints.push(`/backend-api/files/${fileId}/download?conversation_id=${convId}`);
+                  }
+
+                  let lastErrorPayload = null;
+                  let lastStatus = 0;
+                  
+                  for (const endpoint of endpoints) {
+                    try {
+                      const tempRes = await _fetch(endpoint, {
+                        headers: reqHeaders,
+                        credentials: 'include'
+                      });
+                      lastStatus = tempRes.status;
+                      if (tempRes.ok) {
+                        const tempMeta = await tempRes.json();
+                        const tempUrl = tempMeta.download_url || tempMeta.downloadUrl || tempMeta.url;
+                        if (tempUrl) {
+                          dlRes = tempRes;
+                          dlMeta = tempMeta;
+                          downloadUrl = tempUrl;
+                          break;
+                        } else {
+                          lastErrorPayload = tempMeta;
+                        }
+                      } else {
+                        try { lastErrorPayload = await tempRes.json(); } catch(_) { lastErrorPayload = null; }
                       }
-                      const fileRes = await _fetch(downloadUrl, { headers: fileHeaders });
-                      console.log("[CEP] On-demand content response for:", filename, fileRes.status);
-                      if (fileRes.ok) {
-                        const buffer = await fileRes.arrayBuffer();
-                        const dataUrl = await toDataUrl(buffer, fileRes.headers.get('content-type'));
-                        save(filename, dataUrl, fileRes.headers.get('content-type'), downloadUrl);
-                        console.log("[CEP] On-demand successfully saved file:", filename);
-                      }
+                    } catch(err) {
+                      console.warn("[CEP] On-demand download endpoint try failed for:", endpoint, err);
                     }
+                  }
+
+                  if (downloadUrl) {
+                    console.log("[CEP] On-demand download URL resolved for:", filename);
+                    const fileHeaders = { 'accept': '*/*' };
+                    if (downloadUrl.includes('/backend-api/') && window.__cep.authHeader) {
+                      fileHeaders['Authorization'] = window.__cep.authHeader;
+                    }
+                    const fileRes = await _fetch(downloadUrl, { headers: fileHeaders });
+                    console.log("[CEP] On-demand content response for:", filename, fileRes.status);
+                    if (fileRes.ok) {
+                      const buffer = await fileRes.arrayBuffer();
+                      const dataUrl = await toDataUrl(buffer, fileRes.headers.get('content-type'));
+                      save(filename, dataUrl, fileRes.headers.get('content-type'), downloadUrl);
+                      console.log("[CEP] On-demand successfully saved file:", filename);
+                    } else {
+                      console.warn("[CEP] On-demand content fetch failed for:", filename, "status:", fileRes.status);
+                    }
+                  } else {
+                    console.warn("[CEP] On-demand download URL missing for:", filename, "Last status:", lastStatus, "Payload:", JSON.stringify(lastErrorPayload));
                   }
                 } catch(e) {
                   console.warn("[CEP] Failed on-demand fetch for file:", filename, e);
@@ -556,6 +783,154 @@
       } else {
         console.log("[CEP] __cepQuery: Path does not match conversation UUID:", window.location.pathname);
       }
+    } else if (window.location.hostname.includes('claude.ai')) {
+      const match = window.location.pathname.match(/\/chat\/([a-f0-9-]{36})/);
+      const convId = match ? match[1] : null;
+
+      // Extract Claude organization ID from window.__cep.orgId or lastActiveOrg cookie or document path
+      let orgId = window.__cep.orgId;
+      if (!orgId) {
+        const m = document.cookie.match(/lastActiveOrg=([a-f0-9-]{36})/);
+        if (m) {
+          orgId = m[1];
+          window.__cep.orgId = orgId;
+        }
+      }
+      if (!orgId) {
+        for (const k of Object.keys(localStorage)) {
+          try {
+            const v = JSON.parse(localStorage.getItem(k));
+            if (v?.uuid) { orgId = v.uuid; window.__cep.orgId = orgId; break; }
+            if (v?.id && /^[a-f0-9-]{36}$/.test(v.id)) { orgId = v.id; window.__cep.orgId = orgId; break; }
+          } catch(_) {}
+        }
+      }
+      if (!orgId) {
+        const pm = window.location.pathname.match(/\/([a-f0-9-]{36})\//);
+        if (pm) {
+          orgId = pm[1];
+          window.__cep.orgId = orgId;
+        }
+      }
+
+      // Clear store if we switched to a different conversation (or to a new chat)
+      if (window.__cep.lastConvId !== convId) {
+        console.log("[CEP] Claude conversation changed from", window.__cep.lastConvId, "to", convId, "- clearing file store.");
+        window.__cep.files = {};
+        window.__cep.idMap = {};
+        window.__cep.urlMap = {};
+        window.__cep.lastConvId = convId;
+      }
+
+      if (convId && orgId) {
+        console.log("[CEP] __cepQuery (Claude): Fetching conversation tree for:", convId, "orgId:", orgId);
+        try {
+          const res = await _fetch(`/api/organizations/${orgId}/chat_conversations/${convId}?tree=true&rendering_mode=messages&render_all_tools=true`, {
+            headers: {
+              'accept': 'application/json'
+            },
+            credentials: 'include'
+          });
+          console.log("[CEP] __cepQuery (Claude): Conversation tree fetch status:", res.status);
+          if (res.ok) {
+            const data = await res.json();
+            console.log("[CEP] __cepQuery (Claude): Full tree data:", data);
+            if (data && data.chat_messages) {
+              data.chat_messages.forEach((msg, idx) => {
+                console.log(`[CEP] Claude Message ${idx}:`, JSON.stringify(msg));
+              });
+            }
+            scanJsonForFiles(data);
+             
+            console.log("[CEP] __cepQuery (Claude): Parsed tree. idMap:", JSON.stringify(window.__cep.idMap));
+            
+            // On-demand fetch file binaries programmatically in the page context (same-origin, cookie & auth-safe!)
+            for (const [fileId, filename] of Object.entries(window.__cep.idMap)) {
+              const k = filename.toLowerCase().trim();
+              // Only download valid Claude storage IDs (36-character UUID)
+              const isClaudeFile = typeof fileId === 'string' && /^[a-f0-9-]{36}$/.test(fileId);
+              if (!window.__cep.files[k] && isClaudeFile) {
+                // Attempt direct same-origin paths first (to bypass CORS and utilize same-site session cookies)
+                const endpoints = [
+                  `/api/${orgId}/files/${fileId}/content`,
+                  `/api/${orgId}/files/${fileId}/document_pdf`,
+                  `/api/${orgId}/files/${fileId}/download`,
+                  `/api/organizations/${orgId}/files/${fileId}/download`,
+                  `/api/${orgId}/files/${fileId}/preview`,
+                  `/api/${orgId}/files/${fileId}`,
+                  `/api/organizations/${orgId}/files/${fileId}/content`,
+                  `/api/organizations/${orgId}/files/${fileId}`
+                ];
+                console.log("[CEP] On-demand page-context fetching Claude file:", filename, "fileId:", fileId, "endpoints:", endpoints);
+                try {
+                  let fileRes = null;
+                  let lastStatus = 0;
+                  
+                  for (const endpoint of endpoints) {
+                    try {
+                      const tempRes = await _fetch(endpoint, {
+                        credentials: 'include'
+                      });
+                      lastStatus = tempRes.status;
+                      if (tempRes.ok) {
+                        const ct = (tempRes.headers.get('content-type') || '').toLowerCase();
+                        if (ct.includes('json')) {
+                          try {
+                            const json = await tempRes.json();
+                            console.log("[CEP] Claude file metadata JSON resolved for:", filename, json);
+                            const downloadUrl = findDownloadUrl(json);
+                            if (downloadUrl) {
+                              window.__cep.downloadUrlMap[fileId] = downloadUrl;
+                              const fRes = await _fetch(downloadUrl);
+                              if (fRes.ok) {
+                                fileRes = fRes;
+                                break;
+                              }
+                            }
+                          } catch(err) {
+                            console.warn("[CEP] Failed to parse/fetch JSON metadata for:", filename, err);
+                          }
+                        } else {
+                          fileRes = tempRes;
+                          break;
+                        }
+                      }
+                    } catch(err) {
+                      console.warn("[CEP] On-demand Claude download endpoint try failed for:", endpoint, err);
+                    }
+                  }
+
+                  if (fileRes) {
+                    console.log("[CEP] On-demand Claude content response for:", filename, fileRes.status);
+                    const buffer = await fileRes.arrayBuffer();
+                    const ct = fileRes.headers.get('content-type');
+                    const dataUrl = await toDataUrl(buffer, ct);
+                    save(filename, dataUrl, ct, fileRes.url);
+                    console.log("[CEP] On-demand successfully saved Claude file:", filename);
+                  } else {
+                    // Fallback to extracted_content if download failed or not possible (e.g. user-uploaded docs on Claude)
+                    const extContent = window.__cep.extractedContentMap[fileId];
+                    if (extContent) {
+                      const base64 = btoa(unescape(encodeURIComponent(extContent)));
+                      const dataUrl = 'data:text/plain;charset=utf-8;base64,' + base64;
+                      save(filename, dataUrl, 'text/plain', 'extracted-content');
+                      console.log("[CEP] On-demand successfully saved Claude file from extracted_content:", filename);
+                    } else {
+                      console.warn("[CEP] On-demand Claude content fetch failed for:", filename, "Last status:", lastStatus);
+                    }
+                  }
+                } catch(e) {
+                  console.warn("[CEP] Failed on-demand Claude fetch for file:", filename, e);
+                }
+              }
+            }
+          }
+        } catch(e) {
+          console.warn("[CEP] On-demand Claude conversation fetch failed:", e);
+        }
+      } else {
+        console.log("[CEP] __cepQuery (Claude): Path does not match conversation UUID or orgId is missing. path:", window.location.pathname, "orgId:", orgId);
+      }
     }
     
     console.log("[CEP] __cepQuery: Dispatching __cepReply. Store files size:", Object.keys(window.__cep.files).length);
@@ -564,7 +939,8 @@
         files: window.__cep.files,
         orgId: window.__cep.orgId,
         authHeader: window.__cep.authHeader,
-        idMap: window.__cep.idMap
+        idMap: window.__cep.idMap,
+        downloadUrlMap: window.__cep.downloadUrlMap || {}
       }
     }));
   });
