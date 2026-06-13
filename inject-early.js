@@ -109,8 +109,10 @@
       for (let i = 0; i < obj.length; i++) scanJsonForFiles(obj[i]);
       return;
     }
-    const id = obj.id || obj.fileId || obj.file_id || obj.file_uuid || obj.uuid || null;
-    const name = obj.name || obj.filename || obj.file_name || obj.original_filename || obj.original_name || null;
+    const id = obj.id || obj.fileId || obj.file_id || obj.file_uuid || obj.uuid ||
+               obj.attachment_id || obj.attachmentId || obj.asset_pointer || obj.assetPointer || null;
+    const name = obj.name || obj.filename || obj.file_name || obj.original_filename || obj.original_name ||
+                 obj.title || obj.original_title || obj.originalTitle || null;
     const isFileId = (typeof id === 'string') && (id.startsWith('file-') || /^[a-f0-9-]{36}$/.test(id));
     if (isFileId && typeof name === 'string' && name.includes('.')) {
       window.__cep.idMap[id] = name;
@@ -482,6 +484,7 @@
           console.log("[CEP] __cepQuery: Conversation tree fetch status:", res.status);
           if (res.ok) {
             const data = await res.json();
+            console.log("[CEP] __cepQuery: Conversation tree JSON data:", data);
             scanJsonForFiles(data);
             console.log("[CEP] __cepQuery: Parsed tree. idMap size:", Object.keys(window.__cep.idMap).length);
           }
