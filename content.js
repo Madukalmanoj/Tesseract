@@ -323,9 +323,14 @@ async function extractImages(turn) {
     if (!src||src.startsWith('data:image/svg')) { console.log('[CEP] Skipped: empty or svg'); continue; }
     if (img.getAttribute('aria-hidden')==='true') { console.log('[CEP] Skipped: aria-hidden'); continue; }
 
-    // Skip avatar and profile picture elements
-    const isAvatar = img.closest('[class*="avatar" i], [class*="profile-pic" i], [class*="profile-img" i]') ||
-                     (img.className && typeof img.className === 'string' && (img.className.includes('avatar') || img.className.includes('profile-pic') || img.className.includes('profile-img')));
+    // Skip avatar and profile picture elements (bypass for known uploaded/preview chat images)
+    let isAvatar = false;
+    const isUploadedImg = img.getAttribute('data-test-id') === 'uploaded-img' || 
+                          (img.className && typeof img.className === 'string' && img.className.includes('preview-image'));
+    if (!isUploadedImg) {
+      isAvatar = img.closest('[class*="avatar" i], [class*="profile-pic" i], [class*="profile-img" i]') ||
+                 (img.className && typeof img.className === 'string' && (img.className.includes('avatar') || img.className.includes('profile-pic') || img.className.includes('profile-img')));
+    }
     if (isAvatar) { console.log('[CEP] Skipped: avatar/profile container'); continue; }
 
     const sl = src.toLowerCase();
