@@ -391,8 +391,8 @@ function resolveImageSrc(img) {
 
   // assets.grok.com upscaling
   if (sl.includes('assets.grok.com')) {
-    // Remove preview-image suffix from path (Grok user upload previews)
-    src = src.replace(/\/preview-image$/i, '');
+    // Replace preview-image suffix with original-image (Grok user upload previews)
+    src = src.replace(/\/preview-image$/i, '/original-image');
     // Remove thumbnail suffixes from filename (e.g. -thumb, _thumb, -small, _small)
     src = src.replace(/[-_](thumb|thumbnail|small|medium|preview)\b/gi, '');
     // Remove trailing size paths (e.g. /thumb)

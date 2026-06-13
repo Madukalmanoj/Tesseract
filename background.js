@@ -54,12 +54,39 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
 // ── Fetch any URL as base64 ───────────────────────────────────────────────────
 async function fetchAsBase64(url) {
   let res;
-  try {
-    // Try with credentials for authenticated endpoints (Claude/ChatGPT private files)
-    res = await fetch(url, { credentials: "include" });
-  } catch(e) {
-    // Fallback without credentials for external CDN images
-    res = await fetch(url);
+
+  // Custom fallback sequence for assets.grok.com
+  if (url.includes('assets.grok.com') && url.endsWith('/original-image')) {
+    const urlsToTry = [
+      url, // /original-image
+      url.replace(/\/original-image$/, '/original'),
+      url.replace(/\/original-image$/, '/image'),
+      url.replace(/\/original-image$/, '/preview-image')
+    ];
+
+    for (let i = 0; i < urlsToTry.length; i++) {
+      const attemptUrl = urlsToTry[i];
+      try {
+        res = await fetch(attemptUrl);
+        if (res && res.ok) {
+          url = attemptUrl; // update url for mime/size info
+          break;
+        }
+      } catch (_) {
+        // try next one
+      }
+    }
+  }
+
+  // Fallback to default fetch if the custom sequence didn't fetch successfully
+  if (!res || !res.ok) {
+    try {
+      // Try with credentials for authenticated endpoints (Claude/ChatGPT private files)
+      res = await fetch(url, { credentials: "include" });
+    } catch(e) {
+      // Fallback without credentials for external CDN images
+      res = await fetch(url);
+    }
   }
 
   // If response is not ok or was blocked by CORS, retry without credentials
