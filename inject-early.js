@@ -803,43 +803,45 @@
                   };
                   let dlRes = null;
                   let dlMeta = null;
-                  let downloadUrl = null;
+                  let downloadUrl = window.__cep.downloadUrlMap ? window.__cep.downloadUrlMap[fileId] : null;
                   
-                  const endpoints = [];
-                  if (typeof fileId === 'string' && fileId.startsWith('libfile_')) {
-                    endpoints.push(`/backend-api/files/library/${fileId}/download?conversation_id=${convId}`);
-                    endpoints.push(`/backend-api/files/library/${fileId}?conversation_id=${convId}`);
-                    endpoints.push(`/backend-api/files/${fileId}/download?conversation_id=${convId}`);
-                  } else {
-                    endpoints.push(`/backend-api/files/${fileId}/download?conversation_id=${convId}`);
-                  }
+                  if (!downloadUrl) {
+                    const endpoints = [];
+                    if (typeof fileId === 'string' && fileId.startsWith('libfile_')) {
+                      endpoints.push(`/backend-api/files/library/${fileId}/download?conversation_id=${convId}`);
+                      endpoints.push(`/backend-api/files/library/${fileId}?conversation_id=${convId}`);
+                      endpoints.push(`/backend-api/files/${fileId}/download?conversation_id=${convId}`);
+                    } else {
+                      endpoints.push(`/backend-api/files/${fileId}/download?conversation_id=${convId}`);
+                    }
 
-                  let lastErrorPayload = null;
-                  let lastStatus = 0;
-                  
-                  for (const endpoint of endpoints) {
-                    try {
-                      const tempRes = await _fetch(endpoint, {
-                        headers: reqHeaders,
-                        credentials: 'include'
-                      });
-                      lastStatus = tempRes.status;
-                      if (tempRes.ok) {
-                        const tempMeta = await tempRes.json();
-                        const tempUrl = tempMeta.download_url || tempMeta.downloadUrl || tempMeta.url;
-                        if (tempUrl) {
-                          dlRes = tempRes;
-                          dlMeta = tempMeta;
-                          downloadUrl = tempUrl;
-                          break;
+                    let lastErrorPayload = null;
+                    let lastStatus = 0;
+                    
+                    for (const endpoint of endpoints) {
+                      try {
+                        const tempRes = await _fetch(endpoint, {
+                          headers: reqHeaders,
+                          credentials: 'include'
+                        });
+                        lastStatus = tempRes.status;
+                        if (tempRes.ok) {
+                          const tempMeta = await tempRes.json();
+                          const tempUrl = tempMeta.download_url || tempMeta.downloadUrl || tempMeta.url;
+                          if (tempUrl) {
+                            dlRes = tempRes;
+                            dlMeta = tempMeta;
+                            downloadUrl = tempUrl;
+                            break;
+                          } else {
+                            lastErrorPayload = tempMeta;
+                          }
                         } else {
-                          lastErrorPayload = tempMeta;
+                          try { lastErrorPayload = await tempRes.json(); } catch(_) { lastErrorPayload = null; }
                         }
-                      } else {
-                        try { lastErrorPayload = await tempRes.json(); } catch(_) { lastErrorPayload = null; }
+                      } catch(err) {
+                        console.warn("[CEP] On-demand download endpoint try failed for:", endpoint, err);
                       }
-                    } catch(err) {
-                      console.warn("[CEP] On-demand download endpoint try failed for:", endpoint, err);
                     }
                   }
 
