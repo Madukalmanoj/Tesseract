@@ -24,7 +24,10 @@
       const hl = header.toLowerCase();
       if (hl === 'authorization' || hl === 'x-goog-authuser' || (value && typeof value === 'string' && value.startsWith('SAPISIDHASH'))) {
         if (value !== '0') {
-          window.__cep.authHeader = value;
+          // Do not overwrite authHeader if it's a Google-specific SAPISIDHASH or x-goog-authuser, keeping Claude/ChatGPT credentials clean
+          if (!hl.includes('authuser') && !value.startsWith('SAPISIDHASH')) {
+            window.__cep.authHeader = value;
+          }
           console.log("[CEP] Captured XHR Authorization header:", value.slice(0, 20) + "...");
         }
       } else if (hl.startsWith('oai-')) {
@@ -503,11 +506,12 @@
       u.includes('blob.core.windows') || u.includes('storage.googleapis') ||
       u.includes('/api/organizations/') || u.includes('googleusercontent.com') ||
       (u.includes('google.com') && (u.includes('/rd-gg/') || u.includes('filename=') || u.includes('content-disposition')));
+    const isGoogle = u.includes('googleusercontent.com') || u.includes('google.com');
     const fileMime = c.includes('pdf')||c.includes('zip')||c.includes('msword')||
       c.includes('officedocument')||c.includes('octet-stream')||
       c.includes('image/png')||c.includes('image/jpeg')||
       c.includes('image/gif')||c.includes('image/webp')||
-      c.includes('text/plain')||c.includes('text/csv');
+      (!isGoogle && (c.includes('text/plain')||c.includes('text/csv')));
     return fileUrl || fileMime;
   }
 
@@ -807,7 +811,9 @@
         }
       }
       if (auth && auth !== '0') {
-        window.__cep.authHeader = auth;
+        if (!auth.startsWith('SAPISIDHASH')) {
+          window.__cep.authHeader = auth;
+        }
         console.log("[CEP] Captured fetch Authorization header:", auth.slice(0, 20) + "...");
       }
       if (Object.keys(oaiHeaders).length > 0) {
