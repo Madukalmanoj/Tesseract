@@ -572,7 +572,11 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
 
   function add(fd) {
     const k = fd.name?.toLowerCase();
-    if (!k||seen.has(k)) return;
+    if (!k) return;
+
+    // Normalize k to strip .txt if it ends with .txt and contains a binary extension before it
+    const base = k.endsWith('.txt') ? k.slice(0, -4) : k;
+    if (seen.has(base) || seen.has(k)) return;
 
     // Skip type badges if they are name-only
     if (fd.note === 'name only') {
@@ -583,6 +587,7 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
       }
     }
 
+    seen.add(base);
     seen.add(k);
     files.push(fd);
   }
@@ -868,12 +873,29 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
 
 function chipText(el) {
   const al = el.getAttribute('aria-label')||el.title||'';
-  if (al&&al.length<200&&(al.includes('.')||al.length>2)) return al.trim();
-  for (const s of el.querySelectorAll('span,p,[class*="name"],[class*="title"],[class*="filename"]')) {
-    const t=s.innerText?.trim();
-    if (t&&t.length>1&&t.length<200&&!t.includes('\n')) return t;
+  let resolved = null;
+  if (al&&al.length<200&&(al.includes('.')||al.length>2)) {
+    resolved = al.trim();
+  } else {
+    for (const s of el.querySelectorAll('span,p,[class*="name"],[class*="title"],[class*="filename"]')) {
+      const t=s.innerText?.trim();
+      if (t&&t.length>1&&t.length<200&&!t.includes('\n')) {
+        resolved = t;
+        break;
+      }
+    }
   }
-  return el.innerText?.trim()?.split('\n')[0]?.trim()||null;
+  if (!resolved) resolved = el.innerText?.trim()?.split('\n')[0]?.trim()||null;
+
+  // Clean comma-joined details if the first part has an extension
+  if (resolved && resolved.includes(',')) {
+    const parts = resolved.split(',');
+    const part0 = parts[0].trim();
+    if (/\.[a-zA-Z0-9]{2,5}$/.test(part0)) {
+      resolved = part0;
+    }
+  }
+  return resolved;
 }
 
 // ── Auto-expand collapsed sections before extraction ──────────────────────────

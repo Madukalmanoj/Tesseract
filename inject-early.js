@@ -150,6 +150,17 @@
   }
 
   async function inspectRequest(req, opts, url) {
+    let method = 'GET';
+    if (opts.method) {
+      method = opts.method.toUpperCase();
+    } else if (req instanceof Request && req.method) {
+      method = req.method.toUpperCase();
+    }
+    
+    if (method !== 'POST' && method !== 'PUT' && method !== 'PATCH') {
+      return;
+    }
+
     let body = opts.body;
     let contentType = '';
     
@@ -171,13 +182,21 @@
       await inspectRequestBody(body, url);
     } else if (req instanceof Request) {
       try {
-        const cloned = req.clone();
-        if (contentType.includes('multipart/form-data') || contentType.includes('form-data')) {
-          const fd = await cloned.formData();
+        let parsed = false;
+        // Try parsing Request body as formData first (in case it is FormData packed in Request without Content-Type header)
+        try {
+          const clonedForFD = req.clone();
+          const fd = await clonedForFD.formData();
           await inspectRequestBody(fd, url);
-        } else {
-          const blob = await cloned.blob();
-          await inspectRequestBody(blob, url);
+          parsed = true;
+        } catch (_) {}
+
+        if (!parsed) {
+          try {
+            const clonedForBlob = req.clone();
+            const blob = await clonedForBlob.blob();
+            await inspectRequestBody(blob, url);
+          } catch (_) {}
         }
       } catch(e) {
         console.warn("[CEP] Failed to clone/parse request body:", e);
