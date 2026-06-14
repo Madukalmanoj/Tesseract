@@ -803,45 +803,43 @@
                   };
                   let dlRes = null;
                   let dlMeta = null;
-                  let downloadUrl = window.__cep.downloadUrlMap ? window.__cep.downloadUrlMap[fileId] : null;
+                  let downloadUrl = null;
                   
-                  if (!downloadUrl) {
-                    const endpoints = [];
-                    if (typeof fileId === 'string' && fileId.startsWith('libfile_')) {
-                      endpoints.push(`/backend-api/files/library/${fileId}/download?conversation_id=${convId}`);
-                      endpoints.push(`/backend-api/files/library/${fileId}?conversation_id=${convId}`);
-                      endpoints.push(`/backend-api/files/${fileId}/download?conversation_id=${convId}`);
-                    } else {
-                      endpoints.push(`/backend-api/files/${fileId}/download?conversation_id=${convId}`);
-                    }
+                  const endpoints = [];
+                  if (typeof fileId === 'string' && fileId.startsWith('libfile_')) {
+                    endpoints.push(`/backend-api/files/library/${fileId}/download?conversation_id=${convId}`);
+                    endpoints.push(`/backend-api/files/library/${fileId}?conversation_id=${convId}`);
+                    endpoints.push(`/backend-api/files/${fileId}/download?conversation_id=${convId}`);
+                  } else {
+                    endpoints.push(`/backend-api/files/${fileId}/download?conversation_id=${convId}`);
+                  }
 
-                    let lastErrorPayload = null;
-                    let lastStatus = 0;
-                    
-                    for (const endpoint of endpoints) {
-                      try {
-                        const tempRes = await _fetch(endpoint, {
-                          headers: reqHeaders,
-                          credentials: 'include'
-                        });
-                        lastStatus = tempRes.status;
-                        if (tempRes.ok) {
-                          const tempMeta = await tempRes.json();
-                          const tempUrl = tempMeta.download_url || tempMeta.downloadUrl || tempMeta.url;
-                          if (tempUrl) {
-                            dlRes = tempRes;
-                            dlMeta = tempMeta;
-                            downloadUrl = tempUrl;
-                            break;
-                          } else {
-                            lastErrorPayload = tempMeta;
-                          }
+                  let lastErrorPayload = null;
+                  let lastStatus = 0;
+                  
+                  for (const endpoint of endpoints) {
+                    try {
+                      const tempRes = await _fetch(endpoint, {
+                        headers: reqHeaders,
+                        credentials: 'include'
+                      });
+                      lastStatus = tempRes.status;
+                      if (tempRes.ok) {
+                        const tempMeta = await tempRes.json();
+                        const tempUrl = tempMeta.download_url || tempMeta.downloadUrl || tempMeta.url;
+                        if (tempUrl) {
+                          dlRes = tempRes;
+                          dlMeta = tempMeta;
+                          downloadUrl = tempUrl;
+                          break;
                         } else {
-                          try { lastErrorPayload = await tempRes.json(); } catch(_) { lastErrorPayload = null; }
+                          lastErrorPayload = tempMeta;
                         }
-                      } catch(err) {
-                        console.warn("[CEP] On-demand download endpoint try failed for:", endpoint, err);
+                      } else {
+                        try { lastErrorPayload = await tempRes.json(); } catch(_) { lastErrorPayload = null; }
                       }
+                    } catch(err) {
+                      console.warn("[CEP] On-demand download endpoint try failed for:", endpoint, err);
                     }
                   }
 
@@ -963,55 +961,37 @@
                   let fileRes = null;
                   let lastStatus = 0;
                   
-                  // Try the known download URL first if available in the map
-                  const knownUrl = window.__cep.downloadUrlMap ? window.__cep.downloadUrlMap[fileId] : null;
-                  if (knownUrl) {
+                  for (const endpoint of endpoints) {
                     try {
-                      console.log("[CEP] On-demand fetching known download URL directly for:", filename, knownUrl);
-                      const tempRes = await _fetch(knownUrl);
+                      const tempRes = await _fetch(endpoint, {
+                        credentials: 'include'
+                      });
+                      lastStatus = tempRes.status;
                       if (tempRes.ok) {
-                        fileRes = tempRes;
-                      } else {
-                        lastStatus = tempRes.status;
+                        const ct = (tempRes.headers.get('content-type') || '').toLowerCase();
+                        if (ct.includes('json')) {
+                          try {
+                            const json = await tempRes.json();
+                            console.log("[CEP] Claude file metadata JSON resolved for:", filename, json);
+                            const downloadUrl = findDownloadUrl(json);
+                            if (downloadUrl) {
+                              window.__cep.downloadUrlMap[fileId] = downloadUrl;
+                              const fRes = await _fetch(downloadUrl);
+                              if (fRes.ok) {
+                                fileRes = fRes;
+                                break;
+                              }
+                            }
+                          } catch(err) {
+                            console.warn("[CEP] Failed to parse/fetch JSON metadata for:", filename, err);
+                          }
+                        } else {
+                          fileRes = tempRes;
+                          break;
+                        }
                       }
                     } catch(err) {
-                      console.warn("[CEP] Failed to direct fetch known download URL:", knownUrl, err);
-                    }
-                  }
-                  
-                  if (!fileRes) {
-                    for (const endpoint of endpoints) {
-                      try {
-                        const tempRes = await _fetch(endpoint, {
-                          credentials: 'include'
-                        });
-                        lastStatus = tempRes.status;
-                        if (tempRes.ok) {
-                          const ct = (tempRes.headers.get('content-type') || '').toLowerCase();
-                          if (ct.includes('json')) {
-                            try {
-                              const json = await tempRes.json();
-                              console.log("[CEP] Claude file metadata JSON resolved for:", filename, json);
-                              const downloadUrl = findDownloadUrl(json);
-                              if (downloadUrl) {
-                                window.__cep.downloadUrlMap[fileId] = downloadUrl;
-                                const fRes = await _fetch(downloadUrl);
-                                if (fRes.ok) {
-                                  fileRes = fRes;
-                                  break;
-                                }
-                              }
-                            } catch(err) {
-                              console.warn("[CEP] Failed to parse/fetch JSON metadata for:", filename, err);
-                            }
-                          } else {
-                            fileRes = tempRes;
-                            break;
-                          }
-                        }
-                      } catch(err) {
-                        console.warn("[CEP] On-demand Claude download endpoint try failed for:", endpoint, err);
-                      }
+                      console.warn("[CEP] On-demand Claude download endpoint try failed for:", endpoint, err);
                     }
                   }
 
