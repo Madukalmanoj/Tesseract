@@ -189,6 +189,51 @@
     }
   }
 
+  async function extractFileFromRequestBody(body) {
+    if (!body) return null;
+    try {
+      if (body instanceof FormData || (body && typeof body.entries === 'function')) {
+        for (const [key, val] of body.entries()) {
+          if (val && (val instanceof Blob || (val && typeof val.size === 'number'))) {
+            const mime = val.type || 'application/octet-stream';
+            const dataUrl = await toDataUrl(val, mime);
+            return { dataUrl, mime };
+          }
+        }
+      } else if (body instanceof Blob || (body && typeof body.size === 'number' && typeof body.type === 'string')) {
+        const mime = body.type || 'application/octet-stream';
+        const dataUrl = await toDataUrl(body, mime);
+        return { dataUrl, mime };
+      }
+    } catch(_) {}
+    return null;
+  }
+
+  async function extractFileFromRequest(req, opts) {
+    let body = opts.body;
+    if (body) {
+      return await extractFileFromRequestBody(body);
+    }
+    if (req instanceof Request) {
+      try {
+        try {
+          const clonedForFD = req.clone();
+          const fd = await clonedForFD.formData();
+          const file = await extractFileFromRequestBody(fd);
+          if (file) return file;
+        } catch (_) {}
+
+        try {
+          const clonedForBlob = req.clone();
+          const blob = await clonedForBlob.blob();
+          const file = await extractFileFromRequestBody(blob);
+          if (file) return file;
+        } catch (_) {}
+      } catch(_) {}
+    }
+    return null;
+  }
+
   async function inspectRequest(req, opts, url) {
     let method = 'GET';
     if (opts.method) {
@@ -555,6 +600,18 @@
 
     if (IS_CLAUDE) {
       // ── CLAUDE FETCH HOOK ──
+      let method = 'GET';
+      if (opts.method) {
+        method = opts.method.toUpperCase();
+      } else if (req instanceof Request && req.method) {
+        method = req.method.toUpperCase();
+      }
+      
+      let uploadFilePromise = null;
+      if (url.includes('/files') && (method === 'POST' || method === 'PUT')) {
+        uploadFilePromise = extractFileFromRequest(req, opts);
+      }
+
       // Inspect request body (for capturing uploads, including Request objects)
       inspectRequest(req, opts, url).catch(_=>{});
 
@@ -640,6 +697,24 @@
       try {
         const ct = resp.headers.get('content-type') || '';
         
+        if (uploadFilePromise) {
+          uploadFilePromise.then(uploadFile => {
+            if (uploadFile && resp.ok && (resp.status === 200 || resp.status === 201)) {
+              if (ct.includes('application/json')) {
+                resp.clone().json().then(json => {
+                  const fileId = json.uuid || json.id;
+                  const filename = json.file_name || json.filename || json.name;
+                  if (fileId && filename) {
+                    save(filename, uploadFile.dataUrl, uploadFile.mime, url);
+                    window.__cep.idMap[fileId] = filename.trim().replace(/^\d{10,13}_/, '');
+                    console.log("[CEP] Direct fetch upload matched successfully:", filename, "to ID:", fileId);
+                  }
+                }).catch(_=>{});
+              }
+            }
+          }).catch(_=>{});
+        }
+
         // Intercept upload response to map real filename/ID to the last uploaded binary blob
         if (url.includes('/files') && ct.includes('application/json') && resp.ok && (resp.status === 200 || resp.status === 201)) {
           resp.clone().json().then(json => {
@@ -803,8 +878,13 @@
   };
   XMLHttpRequest.prototype.send = function(...args) {
     const body = args[0];
+    let uploadFilePromise = null;
+    const url = this.__cepUrl || '';
     if (body) {
       if (IS_CLAUDE) {
+        if (url.includes('/files')) {
+          uploadFilePromise = extractFileFromRequestBody(body);
+        }
         inspectRequestBodyClaude(body, this.__cepUrl).catch(_=>{});
       } else {
         inspectRequestBodyLegacy(body, this.__cepUrl).catch(_=>{});
@@ -817,6 +897,23 @@
         let ct=''; try{ct=this.getResponseHeader('content-type')||'';}catch(_){}
 
         if (IS_CLAUDE) {
+          if (uploadFilePromise && url.includes('/files') && ct.includes('application/json')) {
+            uploadFilePromise.then(uploadFile => {
+              if (uploadFile) {
+                try {
+                  const json = JSON.parse(this.responseText);
+                  const fileId = json.uuid || json.id;
+                  const filename = json.file_name || json.filename || json.name;
+                  if (fileId && filename) {
+                    save(filename, uploadFile.dataUrl, uploadFile.mime, url);
+                    window.__cep.idMap[fileId] = filename.trim().replace(/^\d{10,13}_/, '');
+                    console.log("[CEP] Direct XHR upload matched successfully:", filename, "to ID:", fileId);
+                  }
+                } catch(_) {}
+              }
+            }).catch(_=>{});
+          }
+
           // Intercept upload response to map real filename/ID to the last uploaded binary blob via XHR
           if (url.includes('/files') && ct.includes('application/json')) {
             try {
@@ -1073,11 +1170,15 @@
       if (convId && orgId) {
         console.log("[CEP] __cepQuery (Claude): Fetching conversation tree for:", convId, "orgId:", orgId);
         try {
+          const headers = {
+            'accept': 'application/json',
+            ...window.__cep.claudeHeaders
+          };
+          if (window.__cep.authHeader) {
+            headers['Authorization'] = window.__cep.authHeader;
+          }
           const res = await _fetch(`/api/organizations/${orgId}/chat_conversations/${convId}?tree=true&rendering_mode=messages&render_all_tools=true`, {
-            headers: {
-              'accept': 'application/json',
-              ...window.__cep.claudeHeaders
-            },
+            headers,
             credentials: 'include'
           });
           console.log("[CEP] __cepQuery (Claude): Conversation tree fetch status:", res.status);
@@ -1117,11 +1218,15 @@
                   
                   for (const endpoint of endpoints) {
                     try {
+                      const headers = {
+                        'accept': 'application/json',
+                        ...window.__cep.claudeHeaders
+                      };
+                      if (window.__cep.authHeader) {
+                        headers['Authorization'] = window.__cep.authHeader;
+                      }
                       const tempRes = await _fetch(endpoint, {
-                        headers: {
-                          'accept': 'application/json',
-                          ...window.__cep.claudeHeaders
-                        },
+                        headers,
                         credentials: 'include'
                       });
                       lastStatus = tempRes.status;
@@ -1137,6 +1242,9 @@
                               let fileHeaders = {};
                               if (downloadUrl.startsWith('/') || downloadUrl.includes('claude.ai')) {
                                 fileHeaders = { ...window.__cep.claudeHeaders };
+                                if (window.__cep.authHeader) {
+                                  fileHeaders['Authorization'] = window.__cep.authHeader;
+                                }
                               }
                               const fRes = await _fetch(downloadUrl, {
                                 headers: fileHeaders,
