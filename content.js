@@ -573,6 +573,16 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
   function add(fd) {
     const k = fd.name?.toLowerCase();
     if (!k||seen.has(k)) return;
+
+    // Skip type badges if they are name-only
+    if (fd.note === 'name only') {
+      const upper = fd.name.toUpperCase().trim();
+      const typeBadges = new Set(['ZIP', 'PDF', 'DOCX', 'TXT', 'CSV', 'XLSX', 'PPTX', 'PNG', 'JPG', 'JPEG', 'GIF', 'WEBP', 'HTML', 'CSS', 'JS', 'PY', 'SH', 'JSON', 'MD', 'PASTED']);
+      if (typeBadges.has(upper)) {
+        return;
+      }
+    }
+
     seen.add(k);
     files.push(fd);
   }
