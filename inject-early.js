@@ -119,34 +119,61 @@
   async function inspectRequestBody(body, url) {
     if (!body) return;
     try {
-      if (body instanceof FormData) {
+      if (body instanceof FormData || (body && typeof body.entries === 'function')) {
         for (const [key, val] of body.entries()) {
-          if (val instanceof File) {
-            const name = val.name;
+          if (val && (val instanceof Blob || (val && typeof val.size === 'number'))) {
+            const name = val.name || ('upload_' + Date.now() + '.' + mext(val.type));
             const mime = val.type;
             const dataUrl = await toDataUrl(val, mime);
-            console.log("[CEP] Intercepted FormData file upload request body:", name, mime);
+            console.log("[CEP] Intercepted FormData file:", name, mime);
             save(name, dataUrl, mime, url);
           }
         }
-      } else if (body instanceof File) {
-        const name = body.name;
+      } else if (body instanceof Blob || (body && typeof body.size === 'number' && typeof body.type === 'string')) {
+        const name = body.name || getName(url) || ('upload_' + Date.now() + '.' + mext(body.type));
         const mime = body.type;
         const dataUrl = await toDataUrl(body, mime);
-        console.log("[CEP] Intercepted File upload request body:", name, mime);
-        save(name, dataUrl, mime, url);
-      } else if (body instanceof Blob) {
-        let name = getName(url);
-        if (!name) {
-          name = 'upload_' + Date.now() + '.' + mext(body.type);
-        }
-        const mime = body.type;
-        const dataUrl = await toDataUrl(body, mime);
-        console.log("[CEP] Intercepted Blob upload request body:", name, mime);
+        console.log("[CEP] Intercepted Blob/File:", name, mime);
         save(name, dataUrl, mime, url);
       }
     } catch(e) {
       console.warn("[CEP] Failed to inspect request body:", e);
+    }
+  }
+
+  async function inspectRequest(req, opts, url) {
+    let body = opts.body;
+    let contentType = '';
+    
+    const getHeader = (headers, name) => {
+      if (!headers) return null;
+      if (typeof headers.get === 'function') return headers.get(name);
+      for (const [k, v] of Object.entries(headers)) {
+        if (k.toLowerCase() === name.toLowerCase()) return v;
+      }
+      return null;
+    };
+    
+    contentType = getHeader(opts.headers, 'content-type') || '';
+    if (req instanceof Request) {
+      if (!contentType) contentType = getHeader(req.headers, 'content-type') || '';
+    }
+    
+    if (body) {
+      await inspectRequestBody(body, url);
+    } else if (req instanceof Request) {
+      try {
+        const cloned = req.clone();
+        if (contentType.includes('multipart/form-data') || contentType.includes('form-data')) {
+          const fd = await cloned.formData();
+          await inspectRequestBody(fd, url);
+        } else {
+          const blob = await cloned.blob();
+          await inspectRequestBody(blob, url);
+        }
+      } catch(e) {
+        console.warn("[CEP] Failed to clone/parse request body:", e);
+      }
     }
   }
 
@@ -459,10 +486,8 @@
     const opts = args[1] || {};
     const url = typeof req==='string'?req:(req instanceof Request?req.url:String(req));
 
-    // Inspect request body if present (for capturing uploads)
-    if (opts.body) {
-      inspectRequestBody(opts.body, url).catch(_=>{});
-    }
+    // Inspect request body (for capturing uploads, including Request objects)
+    inspectRequest(req, opts, url).catch(_=>{});
 
     // Capture auth and OAI headers
     let auth = null;
