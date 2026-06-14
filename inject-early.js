@@ -916,7 +916,7 @@
                       save(filename, dataUrl, 'text/plain', 'extracted-content');
                       console.log("[CEP] On-demand successfully saved Claude file from extracted_content:", filename);
                     } else {
-                      console.warn("[CEP] On-demand Claude content fetch failed for:", filename, "Last status:", lastStatus);
+                      console.log("[CEP] Note: On-demand file content could not be fetched directly (expected for non-PDF/non-image attachments from previous sessions). Filename:", filename, "Status:", lastStatus);
                     }
                   }
                 } catch(e) {

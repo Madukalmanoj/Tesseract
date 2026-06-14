@@ -328,6 +328,14 @@ $("btnShowTray").addEventListener("click", async () => {
   window.close();
 });
 
+$("btnClearAll")?.addEventListener("click", async () => {
+  const caps = await loadCapsules();
+  if (!caps.length) return;
+  if (!confirm(`Are you sure you want to delete all ${caps.length} capsules?`)) return;
+  await deleteAllCapsules();
+  renderCapsuleList();
+});
+
 async function renderCapsuleList() {
   const caps = await loadCapsules();
   const q = $("capSearch").value.toLowerCase();
@@ -335,6 +343,11 @@ async function renderCapsuleList() {
 
   const list = $("capList");
   list.innerHTML = "";
+
+  const clearBtn = $("btnClearAll");
+  if (clearBtn) {
+    clearBtn.style.display = filtered.length ? "flex" : "none";
+  }
 
   if (!filtered.length) {
     list.innerHTML = `<div class="cap-empty">${caps.length ? "No matches." : "No capsules yet.\nExtract a chat to create one."}</div>`;
@@ -423,6 +436,9 @@ async function deleteCapsule(id) {
   const r = await chrome.storage.local.get(["capsules"]);
   const caps = (r.capsules||[]).filter(c => c.id !== id);
   await chrome.storage.local.set({ capsules: caps });
+}
+async function deleteAllCapsules() {
+  await chrome.storage.local.set({ capsules: [] });
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
