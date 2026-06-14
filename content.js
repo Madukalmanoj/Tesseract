@@ -816,16 +816,34 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
   if (PLAT === 'gemini' || PLAT === 'grok' || PLAT === 'unknown') {
     // Helper: check if text looks like a real filename (not a sentence)
     function isLikelyFileName(text) {
-      if (!text || text.length > 120) return false;
-      // Must have a file extension pattern (word.ext at the end)
-      if (/\.\w{1,10}$/.test(text.trim())) return true;
+      if (!text) return false;
+      const trimmed = text.trim();
+      if (trimmed.length < 2 || trimmed.length > 100) return false;
+      
+      const nameLower = trimmed.toLowerCase();
       // Special keywords
-      if (/^(zip|pasted)$/i.test(text.trim())) return true;
+      if (nameLower === 'zip' || nameLower === 'pasted') return true;
+
+      // Must have a file extension pattern (e.g. filename.ext)
+      // Normal extensions are 2 to 5 alphanumeric characters
+      const match = trimmed.match(/\.([a-zA-Z0-9]{2,5})$/);
+      if (!match) return false;
+      
+      const ext = match[1].toLowerCase();
+      // Exclude common words that might be matched if a sentence ends with something like "no.1" or similar
+      const commonNonExts = ['js', 'css', 'html', 'json', 'xml', 'txt', 'csv', 'pdf', 'zip', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'docx', 'xlsx', 'pptx', 'py', 'sh', 'md', 'mp3', 'mp4', 'wav', 'tar', 'gz', 'rar'];
+      if (!commonNonExts.includes(ext) && !/^[a-z0-9]+$/.test(ext)) return false;
+
       // Reject text with multiple spaces (looks like a sentence, not a filename)
-      if ((text.match(/ /g) || []).length > 3) return false;
+      if ((trimmed.match(/\s+/g) || []).length > 2) return false;
+      
       // Reject text starting with common sentence patterns
-      if (/^(On |The |A |An |In |To |It |This |That |From |Moving |Finally |Below |Above )/i.test(text)) return false;
-      return false;
+      if (/^(On |The |A |An |In |To |It |This |That |From |Moving |Finally |Below |Above |Under |After |Before |With |Here |There |Next |Then |First |Second )/i.test(trimmed)) return false;
+      
+      // Filenames should not contain sentence punctuation like commas, semicolons, question marks, exclamation marks
+      if (/[;?!,]/g.test(trimmed)) return false;
+
+      return true;
     }
 
     // Specific file-related selectors (high confidence)
