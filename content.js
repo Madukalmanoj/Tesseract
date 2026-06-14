@@ -1170,21 +1170,35 @@ async function extractAll() {
     if (consumedStore.has(v)) continue;
     if (!v.filename) continue;
     const mime = (v.mimeType || '').toLowerCase();
-    if (mime.startsWith('image/')) continue;
     
-    result.allFiles.push({
-      name: v.filename,
-      dataUrl: v.dataUrl,
-      mimeType: v.mimeType,
-      source: 'intercepted-fallback',
-      note: '✓ data'
-    });
+    if (mime.startsWith('image/') || v.filename.toLowerCase().endsWith('.png') || v.filename.toLowerCase().endsWith('.jpg') || v.filename.toLowerCase().endsWith('.jpeg') || v.filename.toLowerCase().endsWith('.webp') || v.filename.toLowerCase().endsWith('.gif')) {
+      result.allImages.push({
+        src: v.url || '',
+        dataUrl: v.dataUrl,
+        mimeType: v.mimeType,
+        size: v.size || 0,
+        alt: v.filename
+      });
+    } else {
+      result.allFiles.push({
+        name: v.filename,
+        dataUrl: v.dataUrl,
+        mimeType: v.mimeType,
+        source: 'intercepted-fallback',
+        note: '✓ data'
+      });
+    }
     consumedStore.add(v);
   }
 
   // Deduplicate images
   const si=new Set();
-  result.allImages = result.allImages.filter(i=>{if(si.has(i.src))return false;si.add(i.src);return true;});
+  result.allImages = result.allImages.filter(i=>{
+    const key = i.src || i.dataUrl;
+    if(!key || si.has(key)) return false;
+    si.add(key);
+    return true;
+  });
 
   // Deduplicate files, preferring versions with dataUrl
   const fileMap = new Map();
