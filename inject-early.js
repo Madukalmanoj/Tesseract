@@ -989,6 +989,26 @@
               scanJsonForFiles(d);
             } catch(_) {}
           }
+          // Gemini batchexecute JSON capture
+          if (url.includes('batchexecute') && ct.includes('application/json')) {
+            try {
+              const text = this.responseText;
+              // Look for googleusercontent URLs (chat images) or other filenames
+              const urls = text.match(/https?:\/\/[^\s"']+\.googleusercontent\.com\/[^\s"']+/g) || [];
+              for (const u of urls) {
+                const cleanUrl = u.replace(/\\/g, '');
+                // Gemini images in response payload often have clean URLs or parameters.
+                // We map and download them, or trigger dynamic fetch:
+                const name = 'gemini_image_' + Date.now() + '.png';
+                // Trigger content script fetching:
+                window.fetch(cleanUrl).then(r => r.blob()).then(blob => {
+                  toDataUrl(blob, blob.type).then(dataUrl => {
+                    save(name, dataUrl, blob.type, cleanUrl);
+                  });
+                }).catch(_=>{});
+              }
+            } catch(_) {}
+          }
 
           console.log("[CEP] XHR hook checking capture for URL:", url, "ContentType:", ct, "isCapture:", isCapture(url, ct));
           if (!isCapture(url,ct)) return;
