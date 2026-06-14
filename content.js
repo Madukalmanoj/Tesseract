@@ -596,6 +596,8 @@ async function extractFiles(turn, store, orgId) {
     // Add all non-image files stored in window.__cep.files
     for (const [k, v] of Object.entries(store || {})) {
       if (!v.filename) continue;
+      const lowerFname = v.filename.toLowerCase();
+      if (lowerFname === 'file.txt' || lowerFname === 'file') continue;
       const mime = (v.mimeType || '').toLowerCase();
       if (mime.startsWith('image/')) continue;
       add({
