@@ -741,11 +741,15 @@
       const convId = match ? match[1] : null;
 
       // Clear store if we switched to a different conversation (or to a new chat)
+      // Do not clear if we are transitioning from no conversation (null/new) to a new conversation
+      const isTransitionFromNew = !window.__cep.lastConvId;
       if (window.__cep.lastConvId !== convId) {
-        console.log("[CEP] Conversation changed from", window.__cep.lastConvId, "to", convId, "- clearing file store.");
-        window.__cep.files = {};
-        window.__cep.idMap = {};
-        window.__cep.urlMap = {};
+        if (!isTransitionFromNew) {
+          console.log("[CEP] Conversation changed from", window.__cep.lastConvId, "to", convId, "- clearing file store.");
+          window.__cep.files = {};
+          window.__cep.idMap = {};
+          window.__cep.urlMap = {};
+        }
         window.__cep.lastConvId = convId;
       }
 
@@ -882,11 +886,15 @@
       }
 
       // Clear store if we switched to a different conversation (or to a new chat)
+      // Do not clear if we are transitioning from no conversation (null/new) to a new conversation
+      const isTransitionFromNew = !window.__cep.lastConvId;
       if (window.__cep.lastConvId !== convId) {
-        console.log("[CEP] Claude conversation changed from", window.__cep.lastConvId, "to", convId, "- clearing file store.");
-        window.__cep.files = {};
-        window.__cep.idMap = {};
-        window.__cep.urlMap = {};
+        if (!isTransitionFromNew) {
+          console.log("[CEP] Claude conversation changed from", window.__cep.lastConvId, "to", convId, "- clearing file store.");
+          window.__cep.files = {};
+          window.__cep.idMap = {};
+          window.__cep.urlMap = {};
+        }
         window.__cep.lastConvId = convId;
       }
 
