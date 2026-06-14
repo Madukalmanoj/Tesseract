@@ -8,6 +8,8 @@ const PLAT = location.hostname.includes('claude.ai') ? 'claude'
            : (location.hostname.includes('grok.com')||location.hostname.includes('x.com')) ? 'grok'
            : 'unknown';
 
+const TYPE_BADGES = new Set(['ZIP', 'PDF', 'DOCX', 'TXT', 'CSV', 'XLSX', 'PPTX', 'PNG', 'JPG', 'JPEG', 'GIF', 'WEBP', 'HTML', 'CSS', 'JS', 'PY', 'SH', 'JSON', 'MD', 'PASTED']);
+
 // ── Background proxy (no CORS) ───────────────────────────────────────────────
 function bg(action, data) {
   return new Promise(ok => {
@@ -581,8 +583,7 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
     // Skip type badges if they are name-only
     if (fd.note === 'name only') {
       const upper = fd.name.toUpperCase().trim();
-      const typeBadges = new Set(['ZIP', 'PDF', 'DOCX', 'TXT', 'CSV', 'XLSX', 'PPTX', 'PNG', 'JPG', 'JPEG', 'GIF', 'WEBP', 'HTML', 'CSS', 'JS', 'PY', 'SH', 'JSON', 'MD', 'PASTED']);
-      if (typeBadges.has(upper)) {
+      if (TYPE_BADGES.has(upper)) {
         return;
       }
     }
@@ -874,18 +875,45 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
 function chipText(el) {
   const al = el.getAttribute('aria-label')||el.title||'';
   let resolved = null;
-  if (al&&al.length<200&&(al.includes('.')||al.length>2)) {
-    resolved = al.trim();
-  } else {
-    for (const s of el.querySelectorAll('span,p,[class*="name"],[class*="title"],[class*="filename"]')) {
-      const t=s.innerText?.trim();
-      if (t&&t.length>1&&t.length<200&&!t.includes('\n')) {
-        resolved = t;
-        break;
+  if (al && al.length < 200) {
+    const cleanAl = al.trim();
+    if (!TYPE_BADGES.has(cleanAl.toUpperCase())) {
+      if (cleanAl.includes('.') || cleanAl.length > 2) {
+        resolved = cleanAl;
       }
     }
   }
-  if (!resolved) resolved = el.innerText?.trim()?.split('\n')[0]?.trim()||null;
+  
+  if (!resolved) {
+    for (const s of el.querySelectorAll('span,p,[class*="name"],[class*="title"],[class*="filename"]')) {
+      const t = s.innerText?.trim();
+      if (t && t.length > 1 && t.length < 200 && !t.includes('\n')) {
+        const upperT = t.toUpperCase();
+        if (!TYPE_BADGES.has(upperT)) {
+          resolved = t;
+          break;
+        }
+      }
+    }
+  }
+  
+  if (!resolved) {
+    const lines = el.innerText?.trim()?.split('\n') || [];
+    for (const line of lines) {
+      const cleanLine = line.trim();
+      if (cleanLine.length > 1 && cleanLine.length < 200) {
+        const upper = cleanLine.toUpperCase();
+        if (!TYPE_BADGES.has(upper)) {
+          resolved = cleanLine;
+          break;
+        }
+      }
+    }
+  }
+
+  if (!resolved) {
+    resolved = el.innerText?.trim()?.split('\n')[0]?.trim() || null;
+  }
 
   // Clean comma-joined details if the first part has an extension
   if (resolved && resolved.includes(',')) {

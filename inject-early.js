@@ -961,37 +961,55 @@
                   let fileRes = null;
                   let lastStatus = 0;
                   
-                  for (const endpoint of endpoints) {
+                  // Try the known download URL first if available in the map
+                  const knownUrl = window.__cep.downloadUrlMap ? window.__cep.downloadUrlMap[fileId] : null;
+                  if (knownUrl) {
                     try {
-                      const tempRes = await _fetch(endpoint, {
-                        credentials: 'include'
-                      });
-                      lastStatus = tempRes.status;
+                      console.log("[CEP] On-demand fetching known download URL directly for:", filename, knownUrl);
+                      const tempRes = await _fetch(knownUrl);
                       if (tempRes.ok) {
-                        const ct = (tempRes.headers.get('content-type') || '').toLowerCase();
-                        if (ct.includes('json')) {
-                          try {
-                            const json = await tempRes.json();
-                            console.log("[CEP] Claude file metadata JSON resolved for:", filename, json);
-                            const downloadUrl = findDownloadUrl(json);
-                            if (downloadUrl) {
-                              window.__cep.downloadUrlMap[fileId] = downloadUrl;
-                              const fRes = await _fetch(downloadUrl);
-                              if (fRes.ok) {
-                                fileRes = fRes;
-                                break;
-                              }
-                            }
-                          } catch(err) {
-                            console.warn("[CEP] Failed to parse/fetch JSON metadata for:", filename, err);
-                          }
-                        } else {
-                          fileRes = tempRes;
-                          break;
-                        }
+                        fileRes = tempRes;
+                      } else {
+                        lastStatus = tempRes.status;
                       }
                     } catch(err) {
-                      console.warn("[CEP] On-demand Claude download endpoint try failed for:", endpoint, err);
+                      console.warn("[CEP] Failed to direct fetch known download URL:", knownUrl, err);
+                    }
+                  }
+                  
+                  if (!fileRes) {
+                    for (const endpoint of endpoints) {
+                      try {
+                        const tempRes = await _fetch(endpoint, {
+                          credentials: 'include'
+                        });
+                        lastStatus = tempRes.status;
+                        if (tempRes.ok) {
+                          const ct = (tempRes.headers.get('content-type') || '').toLowerCase();
+                          if (ct.includes('json')) {
+                            try {
+                              const json = await tempRes.json();
+                              console.log("[CEP] Claude file metadata JSON resolved for:", filename, json);
+                              const downloadUrl = findDownloadUrl(json);
+                              if (downloadUrl) {
+                                window.__cep.downloadUrlMap[fileId] = downloadUrl;
+                                const fRes = await _fetch(downloadUrl);
+                                if (fRes.ok) {
+                                  fileRes = fRes;
+                                  break;
+                                }
+                              }
+                            } catch(err) {
+                              console.warn("[CEP] Failed to parse/fetch JSON metadata for:", filename, err);
+                            }
+                          } else {
+                            fileRes = tempRes;
+                            break;
+                          }
+                        }
+                      } catch(err) {
+                        console.warn("[CEP] On-demand Claude download endpoint try failed for:", endpoint, err);
+                      }
                     }
                   }
 
