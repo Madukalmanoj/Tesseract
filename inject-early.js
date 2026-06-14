@@ -1013,7 +1013,7 @@
                       console.warn("[CEP] On-demand content fetch failed for:", filename, "status:", fileRes.status);
                     }
                   } else {
-                    console.warn("[CEP] On-demand download URL missing for:", filename, "Last status:", lastStatus, "Payload:", JSON.stringify(lastErrorPayload));
+                    console.log("[CEP] On-demand download URL not available/expired for:", filename, "Last status:", lastStatus, "Payload:", JSON.stringify(lastErrorPayload));
                   }
                 } catch(e) {
                   console.warn("[CEP] Failed on-demand fetch for file:", filename, e);

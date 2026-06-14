@@ -331,6 +331,34 @@ function cleanAttachmentName(name) {
   return clean;
 }
 
+// Recursively search the DOM, including shadow roots, for all elements matching the selector
+function querySelectorAllShadow(selector, root = document) {
+  const matches = [];
+  function recurse(node) {
+    if (!node) return;
+    if (node.querySelectorAll) {
+      const found = node.querySelectorAll(selector);
+      for (const f of found) {
+        if (!matches.includes(f)) matches.push(f);
+      }
+    }
+    if (node.shadowRoot) {
+      recurse(node.shadowRoot);
+    }
+    const childs = node.childNodes || [];
+    for (let i = 0; i < childs.length; i++) {
+      recurse(childs[i]);
+    }
+  }
+  recurse(root);
+  return matches;
+}
+
+function querySelectorShadow(selector, root = document) {
+  const res = querySelectorAllShadow(selector, root);
+  return res.length > 0 ? res[0] : null;
+}
+
 // Check if an element or its ancestor is part of the UI container or noise
 function isInsideUI(el) {
   if (!el) return false;
@@ -1179,9 +1207,9 @@ async function dropCapsule(cap) {
     const composer = document.querySelector('form') || 
                      input.closest('[class*="composer" i],[class*="Composer" i],[class*="input" i],[class*="Input" i]') ||
                      document.body;
-    let fileInputs = Array.from(composer.querySelectorAll('input[type="file"]'));
+    let fileInputs = querySelectorAllShadow('input[type="file"]', composer);
     if (fileInputs.length === 0) {
-      fileInputs = Array.from(document.querySelectorAll('input[type="file"]'));
+      fileInputs = querySelectorAllShadow('input[type="file"]');
     }
 
     for (const fi of fileInputs) {
@@ -1342,11 +1370,11 @@ async function checkPendingTransfer() {
         // If the capsule contains files, verify if we should wait for file input to appear
         const hasFiles = (transfer.capsule.images && transfer.capsule.images.length > 0) || 
                          (transfer.capsule.files && transfer.capsule.files.length > 0);
-        if (hasFiles && !document.querySelector('input[type="file"]')) {
+        if (hasFiles && !querySelectorShadow('input[type="file"]')) {
           attempts++;
           if (attempts >= 15) { // 3 seconds timeout (15 * 200ms) for file input to appear
             clearInterval(interval);
-            console.warn("[CEP] Text input found, but file input not found after 3 seconds. Proceeding to drop capsule anyway.");
+            console.log("[CEP] Text input found, but file input not found after 3 seconds. Proceeding to drop capsule anyway.");
             dropCapsule(transfer.capsule);
           }
           return; // Keep waiting for file input
