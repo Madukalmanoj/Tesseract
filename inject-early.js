@@ -127,6 +127,10 @@
             const dataUrl = await toDataUrl(val, mime);
             console.log("[CEP] Intercepted FormData file:", name, mime);
             save(name, dataUrl, mime, url);
+            
+            if (url && url.includes('/files')) {
+              window.__cep.lastUploadedFile = { dataUrl, mime: mime || 'application/octet-stream', time: Date.now() };
+            }
           }
         }
       } else if (body instanceof Blob || (body && typeof body.size === 'number' && typeof body.type === 'string')) {
@@ -135,6 +139,10 @@
         const dataUrl = await toDataUrl(body, mime);
         console.log("[CEP] Intercepted Blob/File:", name, mime);
         save(name, dataUrl, mime, url);
+        
+        if (url && url.includes('/files')) {
+          window.__cep.lastUploadedFile = { dataUrl, mime: mime || 'application/octet-stream', time: Date.now() };
+        }
       }
     } catch(e) {
       console.warn("[CEP] Failed to inspect request body:", e);
@@ -571,6 +579,23 @@
     try {
       const ct = resp.headers.get('content-type') || '';
       
+      // Intercept upload response to map real filename/ID to the last uploaded binary blob
+      if (url.includes('/files') && ct.includes('application/json') && resp.ok && (resp.status === 200 || resp.status === 201)) {
+        resp.clone().json().then(json => {
+          const fileId = json.uuid || json.id;
+          const filename = json.file_name || json.filename || json.name;
+          if (fileId && filename && window.__cep.lastUploadedFile) {
+            const elapsed = Date.now() - window.__cep.lastUploadedFile.time;
+            if (elapsed < 15000) {
+              const { dataUrl, mime } = window.__cep.lastUploadedFile;
+              save(filename, dataUrl, mime, url);
+              window.__cep.idMap[fileId] = filename.trim().replace(/^\d{10,13}_/, '');
+              console.log("[CEP] Intercepted upload response and mapped file:", filename, "to ID:", fileId);
+            }
+          }
+        }).catch(_=>{});
+      }
+
       // 1. Intercept conversation and messages JSON payloads to map file IDs to filenames
       if (ct.includes('application/json') && (url.includes('/backend-api/') || url.includes('/api/organizations/'))) {
         resp.clone().json().then(d => {
@@ -660,6 +685,24 @@
             }
           } catch(_) {}
           return;
+        }
+
+        // Intercept upload response to map real filename/ID to the last uploaded binary blob via XHR
+        if (url.includes('/files') && ct.includes('application/json')) {
+          try {
+            const json = JSON.parse(this.responseText);
+            const fileId = json.uuid || json.id;
+            const filename = json.file_name || json.filename || json.name;
+            if (fileId && filename && window.__cep.lastUploadedFile) {
+              const elapsed = Date.now() - window.__cep.lastUploadedFile.time;
+              if (elapsed < 15000) {
+                const { dataUrl, mime } = window.__cep.lastUploadedFile;
+                save(filename, dataUrl, mime, url);
+                window.__cep.idMap[fileId] = filename.trim().replace(/^\d{10,13}_/, '');
+                console.log("[CEP] Intercepted XHR upload response and mapped file:", filename, "to ID:", fileId);
+              }
+            }
+          } catch(_) {}
         }
 
         // Generic XHR JSON scanner to capture file ID metadata mappings
