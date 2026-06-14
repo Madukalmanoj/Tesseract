@@ -122,7 +122,41 @@
     window.dispatchEvent(new CustomEvent('__cepStored', {detail:{name,mime,url}}));
   }
 
-  async function inspectRequestBody(body, url) {
+  async function inspectRequestBodyLegacy(body, url) {
+    if (!body) return;
+    try {
+      if (body instanceof FormData) {
+        for (const [key, val] of body.entries()) {
+          if (val instanceof File) {
+            const name = val.name;
+            const mime = val.type;
+            const dataUrl = await toDataUrl(val, mime);
+            console.log("[CEP] Intercepted FormData file upload request body (Legacy):", name, mime);
+            save(name, dataUrl, mime, url);
+          }
+        }
+      } else if (body instanceof File) {
+        const name = body.name;
+        const mime = body.type;
+        const dataUrl = await toDataUrl(body, mime);
+        console.log("[CEP] Intercepted File upload request body (Legacy):", name, mime);
+        save(name, dataUrl, mime, url);
+      } else if (body instanceof Blob) {
+        let name = getName(url);
+        if (!name) {
+          name = 'upload_' + Date.now() + '.' + mext(body.type);
+        }
+        const mime = body.type;
+        const dataUrl = await toDataUrl(body, mime);
+        console.log("[CEP] Intercepted Blob upload request body (Legacy):", name, mime);
+        save(name, dataUrl, mime, url);
+      }
+    } catch(e) {
+      console.warn("[CEP] Failed to inspect request body:", e);
+    }
+  }
+
+  async function inspectRequestBodyClaude(body, url) {
     if (!body) return;
     try {
       if (body instanceof FormData || (body && typeof body.entries === 'function')) {
@@ -185,7 +219,7 @@
     }
     
     if (body) {
-      await inspectRequestBody(body, url);
+      await inspectRequestBodyClaude(body, url);
     } else if (req instanceof Request) {
       try {
         let parsed = false;
@@ -193,7 +227,7 @@
         try {
           const clonedForFD = req.clone();
           const fd = await clonedForFD.formData();
-          await inspectRequestBody(fd, url);
+          await inspectRequestBodyClaude(fd, url);
           parsed = true;
         } catch (_) {}
 
@@ -201,7 +235,7 @@
           try {
             const clonedForBlob = req.clone();
             const blob = await clonedForBlob.blob();
-            await inspectRequestBody(blob, url);
+            await inspectRequestBodyClaude(blob, url);
           } catch (_) {}
         }
       } catch(e) {
@@ -519,87 +553,73 @@
     const opts = args[1] || {};
     const url = typeof req==='string'?req:(req instanceof Request?req.url:String(req));
 
-    // Inspect request body (for capturing uploads, including Request objects)
-    inspectRequest(req, opts, url).catch(_=>{});
-
-    // Capture auth, OAI, and Claude headers
-    let auth = null;
-    const oaiHeaders = {};
-    const claudeHeaders = {};
-    if (opts.headers) {
-      if (opts.headers instanceof Headers) {
-        auth = opts.headers.get('Authorization') || opts.headers.get('authorization');
-        for (const [hk, hv] of opts.headers.entries()) {
-          const hkl = hk.toLowerCase();
-          if (hkl.startsWith('oai-')) {
-            oaiHeaders[hkl] = hv;
-          } else if (IS_CLAUDE && (hkl.startsWith('anthropic-') || hkl === 'organization-id' || hkl === 'custom-agent-id')) {
-            claudeHeaders[hk] = hv;
-          }
-        }
-      } else {
-        for (const [hk, hv] of Object.entries(opts.headers)) {
-          const hkl = hk.toLowerCase();
-          if (hkl === 'authorization') { auth = hv; }
-          if (hkl.startsWith('oai-')) {
-            oaiHeaders[hkl] = hv;
-          } else if (IS_CLAUDE && (hkl.startsWith('anthropic-') || hkl === 'organization-id' || hkl === 'custom-agent-id')) {
-            claudeHeaders[hk] = hv;
-          }
-        }
-      }
-    }
-    if (req instanceof Request && req.headers) {
-      if (req.headers instanceof Headers) {
-        if (!auth) auth = req.headers.get('Authorization') || req.headers.get('authorization');
-        for (const [hk, hv] of req.headers.entries()) {
-          const hkl = hk.toLowerCase();
-          if (hkl.startsWith('oai-')) {
-            oaiHeaders[hkl] = hv;
-          } else if (IS_CLAUDE && (hkl.startsWith('anthropic-') || hkl === 'organization-id' || hkl === 'custom-agent-id')) {
-            claudeHeaders[hk] = hv;
-          }
-        }
-      } else {
-        for (const [hk, hv] of Object.entries(req.headers)) {
-          const hkl = hk.toLowerCase();
-          if (hkl === 'authorization') { if (!auth) auth = hv; }
-          if (hkl.startsWith('oai-')) {
-            oaiHeaders[hkl] = hv;
-          } else if (IS_CLAUDE && (hkl.startsWith('anthropic-') || hkl === 'organization-id' || hkl === 'custom-agent-id')) {
-            claudeHeaders[hk] = hv;
-          }
-        }
-      }
-    }
-    if (auth) {
-      window.__cep.authHeader = auth;
-      console.log("[CEP] Captured fetch Authorization header:", auth.slice(0, 20) + "...");
-    }
-    if (Object.keys(oaiHeaders).length > 0) {
-      Object.assign(window.__cep.oaiHeaders, oaiHeaders);
-      console.log("[CEP] Captured OAI headers:", Object.keys(oaiHeaders));
-    }
-    if (Object.keys(claudeHeaders).length > 0) {
-      Object.assign(window.__cep.claudeHeaders, claudeHeaders);
-      console.log("[CEP] Captured Claude headers:", Object.keys(claudeHeaders));
-    }
-
-    // org ID
-    const om = url.match(/\/organizations\/([a-f0-9-]{36})\//);
-    if (om) window.__cep.orgId = om[1];
-
     if (IS_CLAUDE) {
+      // ── CLAUDE FETCH HOOK ──
+      // Inspect request body (for capturing uploads, including Request objects)
+      inspectRequest(req, opts, url).catch(_=>{});
+
+      // Capture auth and Claude headers
+      let auth = null;
+      const claudeHeaders = {};
+      if (opts.headers) {
+        if (opts.headers instanceof Headers) {
+          auth = opts.headers.get('Authorization') || opts.headers.get('authorization');
+          for (const [hk, hv] of opts.headers.entries()) {
+            const hkl = hk.toLowerCase();
+            if (hkl.startsWith('anthropic-') || hkl === 'organization-id' || hkl === 'custom-agent-id') {
+              claudeHeaders[hk] = hv;
+            }
+          }
+        } else {
+          for (const [hk, hv] of Object.entries(opts.headers)) {
+            const hkl = hk.toLowerCase();
+            if (hkl === 'authorization') { auth = hv; }
+            if (hkl.startsWith('anthropic-') || hkl === 'organization-id' || hkl === 'custom-agent-id') {
+              claudeHeaders[hk] = hv;
+            }
+          }
+        }
+      }
+      if (req instanceof Request && req.headers) {
+        if (req.headers instanceof Headers) {
+          if (!auth) auth = req.headers.get('Authorization') || req.headers.get('authorization');
+          for (const [hk, hv] of req.headers.entries()) {
+            const hkl = hk.toLowerCase();
+            if (hkl.startsWith('anthropic-') || hkl === 'organization-id' || hkl === 'custom-agent-id') {
+              claudeHeaders[hk] = hv;
+            }
+          }
+        } else {
+          for (const [hk, hv] of Object.entries(req.headers)) {
+            const hkl = hk.toLowerCase();
+            if (hkl === 'authorization') { if (!auth) auth = hv; }
+            if (hkl.startsWith('anthropic-') || hkl === 'organization-id' || hkl === 'custom-agent-id') {
+              claudeHeaders[hk] = hv;
+            }
+          }
+        }
+      }
+      if (auth) {
+        window.__cep.authHeader = auth;
+        console.log("[CEP] Captured fetch Authorization header:", auth.slice(0, 20) + "...");
+      }
+      if (Object.keys(claudeHeaders).length > 0) {
+        Object.assign(window.__cep.claudeHeaders, claudeHeaders);
+        console.log("[CEP] Captured Claude headers:", Object.keys(claudeHeaders));
+      }
+
+      // org ID
+      const om = url.match(/\/organizations\/([a-f0-9-]{36})\//);
+      if (om) window.__cep.orgId = om[1];
+
       // Claude Counter generation start detection
       const absUrl = toAbsoluteUrl(url);
       if (absUrl && opts.method === 'POST' && (absUrl.includes('/completion') || absUrl.includes('/retry_completion'))) {
         cc_post('cc:generation_start', {});
       }
-    }
 
-    const resp = await _fetch.apply(this, args);
+      const resp = await _fetch.apply(this, args);
 
-    if (IS_CLAUDE) {
       try {
         const absUrl = toAbsoluteUrl(url);
         if (absUrl) {
@@ -616,74 +636,160 @@
           }
         }
       } catch(_) {}
-    }
 
-    try {
-      const ct = resp.headers.get('content-type') || '';
-      
-      // Intercept upload response to map real filename/ID to the last uploaded binary blob
-      if (url.includes('/files') && ct.includes('application/json') && resp.ok && (resp.status === 200 || resp.status === 201)) {
-        resp.clone().json().then(json => {
-          const fileId = json.uuid || json.id;
-          const filename = json.file_name || json.filename || json.name;
-          if (fileId && filename && window.__cep.lastUploadedFile) {
-            const elapsed = Date.now() - window.__cep.lastUploadedFile.time;
-            if (elapsed < 15000) {
-              const { dataUrl, mime } = window.__cep.lastUploadedFile;
-              save(filename, dataUrl, mime, url);
-              window.__cep.idMap[fileId] = filename.trim().replace(/^\d{10,13}_/, '');
-              console.log("[CEP] Intercepted upload response and mapped file:", filename, "to ID:", fileId);
-            }
-          }
-        }).catch(_=>{});
-      }
-
-      // 1. Intercept conversation and messages JSON payloads to map file IDs to filenames
-      if (ct.includes('application/json') && (url.includes('/backend-api/') || url.includes('/api/organizations/'))) {
-        resp.clone().json().then(d => {
-          scanJsonForFiles(d);
-        }).catch(_=>{});
-      }
-
-      // 2. Intercept ChatGPT /download metadata JSON (historical / explicit download trigger)
-      if (/\/backend-api\/files\/[^/?]+\/download/.test(url)) {
-        resp.clone().json().then(d => {
-          const fname   = d.file_name || d.fileName || d.filename || d.name || null;
-          const dlUrl   = d.download_url || d.downloadUrl || d.url || null;
-          if (fname && dlUrl) {
-            window.__cep.urlMap[dlUrl] = fname;
-            try { window.__cep.urlMap[new URL(dlUrl, window.location.origin).href] = fname; } catch(_) {}
-            
-            // Check if we already captured a file for this download URL under a generic name
-            for (const [k, v] of Object.entries(window.__cep.files)) {
-              if (urlsMatchFile(v.url, dlUrl)) {
-                save(fname, v.dataUrl, v.mimeType, v.url);
-                delete window.__cep.files[k];
-                console.log("[CEP] Late-registered and renamed generic file to:", fname);
+      try {
+        const ct = resp.headers.get('content-type') || '';
+        
+        // Intercept upload response to map real filename/ID to the last uploaded binary blob
+        if (url.includes('/files') && ct.includes('application/json') && resp.ok && (resp.status === 200 || resp.status === 201)) {
+          resp.clone().json().then(json => {
+            const fileId = json.uuid || json.id;
+            const filename = json.file_name || json.filename || json.name;
+            if (fileId && filename && window.__cep.lastUploadedFile) {
+              const elapsed = Date.now() - window.__cep.lastUploadedFile.time;
+              if (elapsed < 15000) {
+                const { dataUrl, mime } = window.__cep.lastUploadedFile;
+                save(filename, dataUrl, mime, url);
+                window.__cep.idMap[fileId] = filename.trim().replace(/^\d{10,13}_/, '');
+                console.log("[CEP] Intercepted upload response and mapped file:", filename, "to ID:", fileId);
               }
             }
+          }).catch(_=>{});
+        }
+
+        // Intercept conversation and messages JSON payloads to map file IDs to filenames
+        if (ct.includes('application/json') && (url.includes('/backend-api/') || url.includes('/api/organizations/'))) {
+          resp.clone().json().then(d => {
+            scanJsonForFiles(d);
+          }).catch(_=>{});
+        }
+
+        // Skip non-file responses
+        if (!isCapture(url, ct)) return resp;
+
+        // Capture arrayBuffer file content
+        resp.clone().arrayBuffer().then(async buffer => {
+          if (buffer.byteLength < 100) return;
+          const dataUrl = await toDataUrl(buffer, ct);
+          let name = getName(url);
+          if (!name) {
+            const idM = url.match(/file-([a-zA-Z0-9]{8})/);
+            name = idM ? ('file_'+idM[1]+'.'+mext(ct)) : ('file.'+mext(ct));
           }
+          save(name, dataUrl, ct, url);
         }).catch(_=>{});
-        return resp; // don't capture this JSON as a file
+      } catch(_) {}
+
+      return resp;
+    } else {
+      // ── LEGACY CHATGPT FETCH HOOK ──
+      // Inspect request body if present (for capturing uploads)
+      if (opts.body) {
+        inspectRequestBodyLegacy(opts.body, url).catch(_=>{});
       }
 
-      // 3. Skip non-file responses
-      if (!isCapture(url, ct)) return resp;
-
-      // 4. Capture arrayBuffer file content
-      resp.clone().arrayBuffer().then(async buffer => {
-        if (buffer.byteLength < 100) return;
-        const dataUrl = await toDataUrl(buffer, ct);
-        let name = getName(url);
-        if (!name) {
-          const idM = url.match(/file-([a-zA-Z0-9]{8})/);
-          name = idM ? ('file_'+idM[1]+'.'+mext(ct)) : ('file.'+mext(ct));
+      // Capture auth and OAI headers
+      let auth = null;
+      const oaiHeaders = {};
+      if (opts.headers) {
+        if (opts.headers instanceof Headers) {
+          auth = opts.headers.get('Authorization') || opts.headers.get('authorization');
+          for (const [hk, hv] of opts.headers.entries()) {
+            if (hk.toLowerCase().startsWith('oai-')) {
+              oaiHeaders[hk.toLowerCase()] = hv;
+            }
+          }
+        } else {
+          for (const [hk, hv] of Object.entries(opts.headers)) {
+            if (hk.toLowerCase() === 'authorization') { auth = hv; }
+            if (hk.toLowerCase().startsWith('oai-')) {
+              oaiHeaders[hk.toLowerCase()] = hv;
+            }
+          }
         }
-        save(name, dataUrl, ct, url);
-      }).catch(_=>{});
-    } catch(_) {}
+      }
+      if (req instanceof Request && req.headers) {
+        if (req.headers instanceof Headers) {
+          if (!auth) auth = req.headers.get('Authorization') || req.headers.get('authorization');
+          for (const [hk, hv] of req.headers.entries()) {
+            if (hk.toLowerCase().startsWith('oai-')) {
+              oaiHeaders[hk.toLowerCase()] = hv;
+            }
+          }
+        } else {
+          for (const [hk, hv] of Object.entries(req.headers)) {
+            if (hk.toLowerCase() === 'authorization') { if (!auth) auth = hv; }
+            if (hk.toLowerCase().startsWith('oai-')) {
+              oaiHeaders[hk.toLowerCase()] = hv;
+            }
+          }
+        }
+      }
+      if (auth) {
+        window.__cep.authHeader = auth;
+        console.log("[CEP] Captured fetch Authorization header:", auth.slice(0, 20) + "...");
+      }
+      if (Object.keys(oaiHeaders).length > 0) {
+        Object.assign(window.__cep.oaiHeaders, oaiHeaders);
+        console.log("[CEP] Captured OAI headers:", Object.keys(oaiHeaders));
+      }
 
-    return resp;
+      // org ID
+      const om = url.match(/\/organizations\/([a-f0-9-]{36})\//);
+      if (om) window.__cep.orgId = om[1];
+
+      const resp = await _fetch.apply(this, args);
+
+      try {
+        const ct = resp.headers.get('content-type') || '';
+        
+        // 1. Intercept conversation and messages JSON payloads to map file IDs to filenames
+        if (ct.includes('application/json') && (url.includes('/backend-api/') || url.includes('/api/organizations/'))) {
+          resp.clone().json().then(d => {
+            scanJsonForFiles(d);
+          }).catch(_=>{});
+        }
+
+        // 2. Intercept ChatGPT /download metadata JSON (historical / explicit download trigger)
+        if (/\/backend-api\/files\/[^/?]+\/download/.test(url)) {
+          resp.clone().json().then(d => {
+            const fname   = d.file_name || d.fileName || d.filename || d.name || null;
+            const dlUrl   = d.download_url || d.downloadUrl || d.url || null;
+            if (fname && dlUrl) {
+              window.__cep.urlMap[dlUrl] = fname;
+              try { window.__cep.urlMap[new URL(dlUrl, window.location.origin).href] = fname; } catch(_) {}
+              
+              // Check if we already captured a file for this download URL under a generic name
+              for (const [k, v] of Object.entries(window.__cep.files)) {
+                if (urlsMatchFile(v.url, dlUrl)) {
+                  save(fname, v.dataUrl, v.mimeType, v.url);
+                  delete window.__cep.files[k];
+                  console.log("[CEP] Late-registered and renamed generic file to:", fname);
+                }
+              }
+            }
+          }).catch(_=>{});
+          return resp; // don't capture this JSON as a file
+        }
+
+        // 3. Skip non-file responses
+        if (!isCapture(url, ct)) return resp;
+
+        // 4. Capture arrayBuffer file content
+        resp.clone().arrayBuffer().then(async buffer => {
+          if (buffer.byteLength < 100) return;
+          const dataUrl = await toDataUrl(buffer, ct);
+          let name = getName(url);
+          if (!name) {
+            const idM = url.match(/file-([a-zA-Z0-9]{8})/);
+            name = idM ? ('file_'+idM[1]+'.'+mext(ct)) : ('file.'+mext(ct));
+          }
+          save(name, dataUrl, ct, url);
+        }).catch(_=>{});
+      } catch(_) {}
+
+      return resp;
+    }
   };
 
   // XHR hook
@@ -698,7 +804,11 @@
   XMLHttpRequest.prototype.send = function(...args) {
     const body = args[0];
     if (body) {
-      inspectRequestBody(body, this.__cepUrl).catch(_=>{});
+      if (IS_CLAUDE) {
+        inspectRequestBodyClaude(body, this.__cepUrl).catch(_=>{});
+      } else {
+        inspectRequestBodyLegacy(body, this.__cepUrl).catch(_=>{});
+      }
     }
     this.addEventListener('readystatechange', function() {
       if (this.readyState!==4||this.status<200||this.status>=300) return;
@@ -706,68 +816,92 @@
         const url = this.__cepUrl||'';
         let ct=''; try{ct=this.getResponseHeader('content-type')||'';}catch(_){}
 
-        // Intercept ChatGPT /download metadata via XHR
-        if (/\/backend-api\/files\/[^/?]+\/download/.test(url)) {
-          try {
-            const d = JSON.parse(this.responseText);
-            const fname = d.file_name || d.fileName || d.filename || d.name || null;
-            const dlUrl = d.download_url || d.downloadUrl || d.url || null;
-            if (fname && dlUrl) {
-              window.__cep.urlMap[dlUrl] = fname;
-              try { window.__cep.urlMap[new URL(dlUrl, window.location.origin).href] = fname; } catch(_) {}
-              
-              // Late rename generic files
-              for (const [k, v] of Object.entries(window.__cep.files)) {
-                if (urlsMatchFile(v.url, dlUrl)) {
-                  save(fname, v.dataUrl, v.mimeType, v.url);
-                  delete window.__cep.files[k];
-                  console.log("[CEP] XHR late-registered and renamed generic file to:", fname);
+        if (IS_CLAUDE) {
+          // Intercept upload response to map real filename/ID to the last uploaded binary blob via XHR
+          if (url.includes('/files') && ct.includes('application/json')) {
+            try {
+              const json = JSON.parse(this.responseText);
+              const fileId = json.uuid || json.id;
+              const filename = json.file_name || json.filename || json.name;
+              if (fileId && filename && window.__cep.lastUploadedFile) {
+                const elapsed = Date.now() - window.__cep.lastUploadedFile.time;
+                if (elapsed < 15000) {
+                  const { dataUrl, mime } = window.__cep.lastUploadedFile;
+                  save(filename, dataUrl, mime, url);
+                  window.__cep.idMap[fileId] = filename.trim().replace(/^\d{10,13}_/, '');
+                  console.log("[CEP] Intercepted XHR upload response and mapped file:", filename, "to ID:", fileId);
                 }
               }
-            }
-          } catch(_) {}
-          return;
-        }
-
-        // Intercept upload response to map real filename/ID to the last uploaded binary blob via XHR
-        if (url.includes('/files') && ct.includes('application/json')) {
-          try {
-            const json = JSON.parse(this.responseText);
-            const fileId = json.uuid || json.id;
-            const filename = json.file_name || json.filename || json.name;
-            if (fileId && filename && window.__cep.lastUploadedFile) {
-              const elapsed = Date.now() - window.__cep.lastUploadedFile.time;
-              if (elapsed < 15000) {
-                const { dataUrl, mime } = window.__cep.lastUploadedFile;
-                save(filename, dataUrl, mime, url);
-                window.__cep.idMap[fileId] = filename.trim().replace(/^\d{10,13}_/, '');
-                console.log("[CEP] Intercepted XHR upload response and mapped file:", filename, "to ID:", fileId);
-              }
-            }
-          } catch(_) {}
-        }
-
-        // Generic XHR JSON scanner to capture file ID metadata mappings
-        if (ct.includes('application/json') && (url.includes('/backend-api/') || url.includes('/api/organizations/'))) {
-          try {
-            const d = JSON.parse(this.responseText);
-            scanJsonForFiles(d);
-          } catch(_) {}
-        }
-
-        if (!isCapture(url,ct)) return;
-        const respData = this.response;
-        if (!respData) return;
-        toDataUrl(respData, ct).then(dataUrl => {
-          const base64Part = dataUrl.split(',')[1] || '';
-          if (base64Part.length < 100) return;
-          let name = getName(url);
-          if (!name) {
-            const idM = url.match(/file[-_]([a-zA-Z0-9]{8})/);
-            name = idM ? ('file_'+idM[1]+'.'+mext(ct)) : ('file.'+mext(ct));
+            } catch(_) {}
           }
-          save(name, dataUrl, ct, url);
-        }).catch(_=>{});
+
+          // Generic XHR JSON scanner to capture file ID metadata mappings
+          if (ct.includes('application/json') && (url.includes('/backend-api/') || url.includes('/api/organizations/'))) {
+            try {
+              const d = JSON.parse(this.responseText);
+              scanJsonForFiles(d);
+            } catch(_) {}
+          }
+
+          if (!isCapture(url,ct)) return;
+          const respData = this.response;
+          if (!respData) return;
+          toDataUrl(respData, ct).then(dataUrl => {
+            const base64Part = dataUrl.split(',')[1] || '';
+            if (base64Part.length < 100) return;
+            let name = getName(url);
+            if (!name) {
+              const idM = url.match(/file[-_]([a-zA-Z0-9]{8})/);
+              name = idM ? ('file_'+idM[1]+'.'+mext(ct)) : ('file.'+mext(ct));
+            }
+            save(name, dataUrl, ct, url);
+          }).catch(_=>{});
+        } else {
+          // Intercept ChatGPT /download metadata via XHR
+          if (/\/backend-api\/files\/[^/?]+\/download/.test(url)) {
+            try {
+              const d = JSON.parse(this.responseText);
+              const fname = d.file_name || d.fileName || d.filename || d.name || null;
+              const dlUrl = d.download_url || d.downloadUrl || d.url || null;
+              if (fname && dlUrl) {
+                window.__cep.urlMap[dlUrl] = fname;
+                try { window.__cep.urlMap[new URL(dlUrl, window.location.origin).href] = fname; } catch(_) {}
+                
+                // Late rename generic files
+                for (const [k, v] of Object.entries(window.__cep.files)) {
+                  if (urlsMatchFile(v.url, dlUrl)) {
+                    save(fname, v.dataUrl, v.mimeType, v.url);
+                    delete window.__cep.files[k];
+                    console.log("[CEP] XHR late-registered and renamed generic file to:", fname);
+                  }
+                }
+              }
+            } catch(_) {}
+            return;
+          }
+
+          // Generic XHR JSON scanner to capture file ID metadata mappings
+          if (ct.includes('application/json') && (url.includes('/backend-api/') || url.includes('/api/organizations/'))) {
+            try {
+              const d = JSON.parse(this.responseText);
+              scanJsonForFiles(d);
+            } catch(_) {}
+          }
+
+          if (!isCapture(url,ct)) return;
+          const respData = this.response;
+          if (!respData) return;
+          toDataUrl(respData, ct).then(dataUrl => {
+            const base64Part = dataUrl.split(',')[1] || '';
+            if (base64Part.length < 100) return;
+            let name = getName(url);
+            if (!name) {
+              const idM = url.match(/file[-_]([a-zA-Z0-9]{8})/);
+              name = idM ? ('file_'+idM[1]+'.'+mext(ct)) : ('file.'+mext(ct));
+            }
+            save(name, dataUrl, ct, url);
+          }).catch(_=>{});
+        }
       } catch(_) {}
     });
     return _xsend.apply(this,args);
@@ -783,15 +917,11 @@
       const convId = match ? match[1] : null;
 
       // Clear store if we switched to a different conversation (or to a new chat)
-      // Do not clear if we are transitioning from no conversation (null/new) to a new conversation
-      const isTransitionFromNew = !window.__cep.lastConvId;
       if (window.__cep.lastConvId !== convId) {
-        if (!isTransitionFromNew) {
-          console.log("[CEP] Conversation changed from", window.__cep.lastConvId, "to", convId, "- clearing file store.");
-          window.__cep.files = {};
-          window.__cep.idMap = {};
-          window.__cep.urlMap = {};
-        }
+        console.log("[CEP] Conversation changed from", window.__cep.lastConvId, "to", convId, "- clearing file store.");
+        window.__cep.files = {};
+        window.__cep.idMap = {};
+        window.__cep.urlMap = {};
         window.__cep.lastConvId = convId;
       }
 
