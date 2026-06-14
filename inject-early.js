@@ -22,7 +22,7 @@
   XMLHttpRequest.prototype.setRequestHeader = function(header, value) {
     if (header) {
       const hl = header.toLowerCase();
-      if (hl === 'authorization') {
+      if (hl === 'authorization' || hl === 'x-goog-authuser' || (value && typeof value === 'string' && value.startsWith('SAPISIDHASH'))) {
         window.__cep.authHeader = value;
         console.log("[CEP] Captured XHR Authorization header:", value.slice(0, 20) + "...");
       } else if (hl.startsWith('oai-')) {
@@ -499,7 +499,8 @@
     const fileUrl = u.includes('oaiusercontent') || u.includes('estuary') ||
       u.includes('/files/') || u.includes('file-service') ||
       u.includes('blob.core.windows') || u.includes('storage.googleapis') ||
-      u.includes('/api/organizations/');
+      u.includes('/api/organizations/') || u.includes('googleusercontent.com') ||
+      (u.includes('google.com') && (u.includes('/rd-gg/') || u.includes('filename=') || u.includes('content-disposition')));
     const fileMime = c.includes('pdf')||c.includes('zip')||c.includes('msword')||
       c.includes('officedocument')||c.includes('octet-stream')||
       c.includes('image/png')||c.includes('image/jpeg')||
@@ -769,7 +770,7 @@
       const oaiHeaders = {};
       if (opts.headers) {
         if (opts.headers instanceof Headers) {
-          auth = opts.headers.get('Authorization') || opts.headers.get('authorization');
+          auth = opts.headers.get('Authorization') || opts.headers.get('authorization') || opts.headers.get('x-goog-authuser');
           for (const [hk, hv] of opts.headers.entries()) {
             if (hk.toLowerCase().startsWith('oai-')) {
               oaiHeaders[hk.toLowerCase()] = hv;
@@ -777,16 +778,17 @@
           }
         } else {
           for (const [hk, hv] of Object.entries(opts.headers)) {
-            if (hk.toLowerCase() === 'authorization') { auth = hv; }
-            if (hk.toLowerCase().startsWith('oai-')) {
-              oaiHeaders[hk.toLowerCase()] = hv;
+            const hkl = hk.toLowerCase();
+            if (hkl === 'authorization' || hkl === 'x-goog-authuser' || (hv && typeof hv === 'string' && hv.startsWith('SAPISIDHASH'))) { auth = hv; }
+            if (hkl.startsWith('oai-')) {
+              oaiHeaders[hkl] = hv;
             }
           }
         }
       }
       if (req instanceof Request && req.headers) {
         if (req.headers instanceof Headers) {
-          if (!auth) auth = req.headers.get('Authorization') || req.headers.get('authorization');
+          if (!auth) auth = req.headers.get('Authorization') || req.headers.get('authorization') || req.headers.get('x-goog-authuser');
           for (const [hk, hv] of req.headers.entries()) {
             if (hk.toLowerCase().startsWith('oai-')) {
               oaiHeaders[hk.toLowerCase()] = hv;
@@ -794,9 +796,10 @@
           }
         } else {
           for (const [hk, hv] of Object.entries(req.headers)) {
-            if (hk.toLowerCase() === 'authorization') { if (!auth) auth = hv; }
-            if (hk.toLowerCase().startsWith('oai-')) {
-              oaiHeaders[hk.toLowerCase()] = hv;
+            const hkl = hk.toLowerCase();
+            if (hkl === 'authorization' || hkl === 'x-goog-authuser' || (hv && typeof hv === 'string' && hv.startsWith('SAPISIDHASH'))) { if (!auth) auth = hv; }
+            if (hkl.startsWith('oai-')) {
+              oaiHeaders[hkl] = hv;
             }
           }
         }
