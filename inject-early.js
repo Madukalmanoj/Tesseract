@@ -23,8 +23,10 @@
     if (header) {
       const hl = header.toLowerCase();
       if (hl === 'authorization' || hl === 'x-goog-authuser' || (value && typeof value === 'string' && value.startsWith('SAPISIDHASH'))) {
-        window.__cep.authHeader = value;
-        console.log("[CEP] Captured XHR Authorization header:", value.slice(0, 20) + "...");
+        if (value !== '0') {
+          window.__cep.authHeader = value;
+          console.log("[CEP] Captured XHR Authorization header:", value.slice(0, 20) + "...");
+        }
       } else if (hl.startsWith('oai-')) {
         window.__cep.oaiHeaders[hl] = value;
         console.log("[CEP] Captured XHR OAI header:", header, value);
@@ -804,7 +806,7 @@
           }
         }
       }
-      if (auth) {
+      if (auth && auth !== '0') {
         window.__cep.authHeader = auth;
         console.log("[CEP] Captured fetch Authorization header:", auth.slice(0, 20) + "...");
       }
