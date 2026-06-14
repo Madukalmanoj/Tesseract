@@ -8,8 +8,6 @@ const PLAT = location.hostname.includes('claude.ai') ? 'claude'
            : (location.hostname.includes('grok.com')||location.hostname.includes('x.com')) ? 'grok'
            : 'unknown';
 
-const TYPE_BADGES = new Set(['ZIP', 'PDF', 'DOCX', 'TXT', 'CSV', 'XLSX', 'PPTX', 'PNG', 'JPG', 'JPEG', 'GIF', 'WEBP', 'HTML', 'CSS', 'JS', 'PY', 'SH', 'JSON', 'MD', 'PASTED']);
-
 // ── Background proxy (no CORS) ───────────────────────────────────────────────
 function bg(action, data) {
   return new Promise(ok => {
@@ -22,7 +20,7 @@ function bg(action, data) {
 // ── Get intercepted store from page hook ─────────────────────────────────────
 function getStore() {
   return new Promise(ok => {
-    const t = setTimeout(()=>ok({files:{},orgId:null}), 60000);
+    const t = setTimeout(()=>ok({files:{},orgId:null}), 1500);
     window.addEventListener('__cepReply', function h(e) {
       clearTimeout(t); window.removeEventListener('__cepReply',h);
       ok(e.detail||{files:{},orgId:null});
@@ -50,45 +48,13 @@ function getOrgId() {
 }
 
 // ── Fuzzy store lookup ───────────────────────────────────────────────────────
-function fromStore(name, store, consumedStore = new Set()) {
+function fromStore(name, store) {
   if (!store||!name) return null;
-
-  if (PLAT === 'chatgpt') {
-    const k = name.toLowerCase().trim();
-    if (store[k] && !consumedStore.has(store[k])) return store[k];
-    const noext = k.replace(/\.[^.]+$/,'');
-    for (const [sk,sv] of Object.entries(store)) {
-      if (consumedStore.has(sv)) continue;
-      if (sk===noext) return sv;
-      if (sk.includes(noext)) return sv;
-      if (noext.includes(sk.replace(/\.[^.]+$/,''))) return sv;
-    }
-    return null;
-  }
-
-  const cleanName = name.replace(/^\d{10,13}_/, '');
-  const k = cleanName.toLowerCase().trim();
-  
-  if (store[k] && !consumedStore.has(store[k])) return store[k];
-  if (store[k + '.txt'] && !consumedStore.has(store[k + '.txt'])) return store[k + '.txt'];
-  
+  const k = name.toLowerCase().trim();
+  if (store[k]) return store[k];
   const noext = k.replace(/\.[^.]+$/,'');
-  
-  // Special fuzzy match for ZIP files represented as literally "ZIP"
-  if (k === 'zip') {
-    for (const [sk, sv] of Object.entries(store)) {
-      if (consumedStore.has(sv)) continue;
-      if (sk.endsWith('.zip')) return sv;
-    }
-  }
-  
-  const commonExts = ['pdf', 'docx', 'doc', 'zip', 'xlsx', 'xls', 'pptx', 'ppt', 'txt', 'csv', 'py', 'json', 'sh', 'js', 'html', 'css', 'md'];
-
   for (const [sk,sv] of Object.entries(store)) {
-    if (consumedStore.has(sv)) continue;
-    if (sk===noext) return sv;
-    if (!commonExts.includes(noext) && sk.includes(noext)) return sv;
-    if (noext.includes(sk.replace(/\.[^.]+$/,''))) return sv;
+    if (sk===noext||sk.includes(noext)||noext.includes(sk.replace(/\.[^.]+$/,''))) return sv;
   }
   return null;
 }
@@ -115,7 +81,7 @@ function mext(mime) {
 // We sort them by DOM order to preserve conversation sequence.
 
 function findTurns() {
-  let found = [];
+  const found = [];
   const seen  = new Set();
 
   if (PLAT === 'chatgpt') {
@@ -124,6 +90,7 @@ function findTurns() {
         if (!seen.has(el)) { seen.add(el); found.push(el); }
       }
     }
+    if (found.length) return found.sort((a,b) => a.compareDocumentPosition(b) & 4 ? -1 : 1);
   }
 
   else if (PLAT === 'gemini') {
@@ -132,6 +99,7 @@ function findTurns() {
         if (!seen.has(el)) { seen.add(el); found.push(el); }
       }
     }
+    if (found.length) return found.sort((a,b) => a.compareDocumentPosition(b) & 4 ? -1 : 1);
   }
 
   else if (PLAT === 'claude') {
@@ -140,6 +108,7 @@ function findTurns() {
         if (!seen.has(el)) { seen.add(el); found.push(el); }
       }
     }
+    if (found.length) return found.sort((a,b) => a.compareDocumentPosition(b) & 4 ? -1 : 1);
   }
 
   else if (PLAT === 'grok') {
@@ -148,44 +117,36 @@ function findTurns() {
         if (!seen.has(el)) { seen.add(el); found.push(el); }
       }
     }
+    if (found.length) return found.sort((a,b) => a.compareDocumentPosition(b) & 4 ? -1 : 1);
   }
 
   // Strategy 1: Known turn selectors (Fuzzy fallback)
-  if (!found.length) {
-    const exactSels = [
-      '[data-testid="human-turn"],[data-testid="ai-turn"]',
-      '[data-testid$="-turn"]',
-      '[class*="turn-"][class*="human"],[class*="turn-"][class*="assistant"]',
-      '[class*="MessageContent"],[class*="message-content"]',
-      '[class*="ConversationTurn"],[class*="conversation-turn"]',
-      'user-query, model-response, model-turn, [class*="user-query"], [class*="model-response"], [class*="model-turn"]'
-    ];
-    for (const sel of exactSels) {
-      for (const el of document.querySelectorAll(sel)) {
-        if (!seen.has(el)) { seen.add(el); found.push(el); }
-      }
-      if (found.length) break;
+  const exactSels = [
+    '[data-testid="human-turn"],[data-testid="ai-turn"]',
+    '[data-testid$="-turn"]',
+    '[class*="turn-"][class*="human"],[class*="turn-"][class*="assistant"]',
+    '[class*="MessageContent"],[class*="message-content"]',
+    '[class*="ConversationTurn"],[class*="conversation-turn"]',
+    'user-query, model-response, model-turn, [class*="user-query"], [class*="model-response"], [class*="model-turn"]'
+  ];
+  for (const sel of exactSels) {
+    for (const el of document.querySelectorAll(sel)) {
+      if (!seen.has(el)) { seen.add(el); found.push(el); }
     }
+    if (found.length) return found.sort((a,b) => a.compareDocumentPosition(b) & 4 ? -1 : 1);
   }
 
   // Strategy 2: Look for 'sr-only' markers (You said: / Claude responded:)
-  if (!found.length) {
-    for (const el of document.querySelectorAll('div, span')) {
-      if (el.className && typeof el.className === 'string' && el.className.includes('sr-only')) {
-        const t = el.innerText || el.textContent || '';
-        if (t.includes('You said:') || t.includes('responded:')) {
-           let wrapper = el.parentElement;
-           if (wrapper && !seen.has(wrapper)) { seen.add(wrapper); found.push(wrapper); }
-        }
+  for (const el of document.querySelectorAll('div, span')) {
+    if (el.className && typeof el.className === 'string' && el.className.includes('sr-only')) {
+      const t = el.innerText || el.textContent || '';
+      if (t.includes('You said:') || t.includes('responded:')) {
+         let wrapper = el.parentElement;
+         if (wrapper && !seen.has(wrapper)) { seen.add(wrapper); found.push(wrapper); }
       }
     }
   }
-
-  // Filter out parent containers (only keep leaf turns)
-  const leaves = found.filter(el => !found.some(other => other !== el && el.contains(other)));
-  if (leaves.length) {
-    return leaves.sort((a,b) => a.compareDocumentPosition(b) & 4 ? -1 : 1);
-  }
+  if (found.length) return found.sort((a,b) => a.compareDocumentPosition(b) & 4 ? -1 : 1);
 
   // Strategy 3: Nuclear Fallback - Grab the main content area
   const chatArea = document.querySelector('main') || document.body;
@@ -316,48 +277,6 @@ const SEL = {
   gemini:  { input: 'rich-textarea div[contenteditable="true"], div[contenteditable="true"][role="textbox"], textarea' },
   grok:    { input: 'textarea, div[role="textbox"][contenteditable="true"]' }
 };
-
-function cleanAttachmentName(name) {
-  if (!name) return name;
-  let clean = name.replace(/^\d{10,13}_/, '').trim();
-  // If the filename contains a comma followed by file metadata (e.g. "file.docx, docx, 72 lines")
-  const commaIdx = clean.search(/\.(pdf|docx?|zip|xlsx?|pptx?|txt|csv|py|json|sh|js|html|css|md),\s*/i);
-  if (commaIdx !== -1) {
-    const extMatch = clean.slice(commaIdx).match(/^\.(pdf|docx?|zip|xlsx?|pptx?|txt|csv|py|json|sh|js|html|css|md)/i);
-    if (extMatch) {
-      clean = clean.slice(0, commaIdx + extMatch[0].length);
-    }
-  }
-  return clean;
-}
-
-// Recursively search the DOM, including shadow roots, for all elements matching the selector
-function querySelectorAllShadow(selector, root = document) {
-  const matches = [];
-  function recurse(node) {
-    if (!node) return;
-    if (node.querySelectorAll) {
-      const found = node.querySelectorAll(selector);
-      for (const f of found) {
-        if (!matches.includes(f)) matches.push(f);
-      }
-    }
-    if (node.shadowRoot) {
-      recurse(node.shadowRoot);
-    }
-    const childs = node.childNodes || [];
-    for (let i = 0; i < childs.length; i++) {
-      recurse(childs[i]);
-    }
-  }
-  recurse(root);
-  return matches;
-}
-
-function querySelectorShadow(selector, root = document) {
-  const res = querySelectorAllShadow(selector, root);
-  return res.length > 0 ? res[0] : null;
-}
 
 // Check if an element or its ancestor is part of the UI container or noise
 function isInsideUI(el) {
@@ -502,28 +421,13 @@ function resolveImageSrc(img) {
 }
 
 // ── Extract images from a turn (bg proxy for CORS) ──────────────────────────
-async function extractImages(turn, idMap = {}) {
+async function extractImages(turn) {
   const imgs = [];
   const allImgs = turn.querySelectorAll('img');
   console.log('[CEP] Found', allImgs.length, 'total images in turn');
   for (const img of allImgs) {
     const src = resolveImageSrc(img);
     const sl = src.toLowerCase();
-
-    // Skip document previews (PDF, DOCX, ZIP thumbnails, etc.)
-    const uuidMatch = src.match(/\/files\/([a-f0-9-]{36})/);
-    if (uuidMatch) {
-      const fileId = uuidMatch[1];
-      const mappedName = idMap[fileId];
-      if (mappedName) {
-        const ext = mappedName.split('.').pop()?.toLowerCase();
-        const nonImageExts = ['pdf', 'docx', 'doc', 'zip', 'xlsx', 'xls', 'pptx', 'ppt', 'txt', 'csv', 'py', 'json', 'sh', 'js', 'html', 'css', 'md'];
-        if (nonImageExts.includes(ext)) {
-          console.log('[CEP] Skipped document preview image:', mappedName);
-          continue;
-        }
-      }
-    }
 
     // Log all attributes of the img element to the console for debugging
     const attrs = {};
@@ -537,12 +441,10 @@ async function extractImages(turn, idMap = {}) {
     if (img.getAttribute('aria-hidden')==='true') { console.log('[CEP] Skipped: aria-hidden'); continue; }
 
     // Skip avatar and profile picture elements (bypass for known uploaded/preview chat images)
-    const isGeminiUpload = PLAT === 'gemini' && (sl.includes('googleusercontent') || sl.includes('google.com'));
     const isUploadedImg = img.getAttribute('data-test-id') === 'uploaded-img' || 
                           (img.className && typeof img.className === 'string' && img.className.includes('preview-image')) ||
                           (sl.includes('twimg.com') && !sl.includes('profile_images')) ||
                           (sl.includes('x.com') && sl.includes('/media/')) ||
-                          isGeminiUpload ||
                           (PLAT === 'grok' && (
                             sl.includes('x.ai') ||
                             sl.includes('twimg.com') ||
@@ -568,14 +470,13 @@ async function extractImages(turn, idMap = {}) {
 
     const nw=img.naturalWidth, nh=img.naturalHeight;
     console.log('[CEP] Image natural size:', nw, 'x', nh);
-    if (!isGeminiUpload && nw>0&&nh>0&&nw<24&&nh<24) { console.log('[CEP] Skipped: too small'); continue; }
+    if (nw>0&&nh>0&&nw<24&&nh<24) { console.log('[CEP] Skipped: too small'); continue; }
     
     // Skip avatars on non-upload URLs
     const isUpload = sl.includes('blob:')||sl.includes('/files/')||sl.includes('oaiusercontent')||
                      sl.includes('upload')||sl.includes('/api/organizations/')||sl.includes('fileuploads')||
                      sl.includes('googleusercontent')||sl.includes('google.com')||
-                     sl.includes('x.ai')||sl.includes('twimg.com')||
-                     isGeminiUpload;
+                     sl.includes('x.ai')||sl.includes('twimg.com');
     if (!isUpload&&sl.includes('avatar')) { console.log('[CEP] Skipped: non-upload avatar keyword'); continue; }
 
     // Fetch same-origin blob/data URLs directly in content script context
@@ -613,134 +514,35 @@ async function extractImages(turn, idMap = {}) {
 }
 
 // ── Extract files from a turn ────────────────────────────────────────────────
-async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
+async function extractFiles(turn, store, orgId) {
   const files = [];
   const seen  = new Set();
 
   function add(fd) {
     const k = fd.name?.toLowerCase();
-    if (!k) return;
-
-    if (PLAT === 'chatgpt') {
-      if (seen.has(k)) return;
-      seen.add(k);
-      files.push(fd);
-      return;
-    }
-
-    // Normalize k to strip .txt if it ends with .txt and contains a binary extension before it
-    const base = k.endsWith('.txt') ? k.slice(0, -4) : k;
-    if (seen.has(base) || seen.has(k)) return;
-
-    // Skip type badges if they are name-only
-    if (fd.note === 'name only') {
-      const upper = fd.name.toUpperCase().trim();
-      if (TYPE_BADGES.has(upper)) {
-        return;
-      }
-    }
-
-    seen.add(base);
+    if (!k||seen.has(k)) return;
     seen.add(k);
     files.push(fd);
   }
 
   // ── ChatGPT: blobs already in store (intercepted by inject-early) ────────
   if (PLAT === 'chatgpt') {
-    // Find all chips in this turn
-    const turnChips = [];
+    // Everything in the store that isn't an image
+    for (const [k,v] of Object.entries(store||{})) {
+      if (!v.filename) continue;
+      const mime = (v.mimeType||'').toLowerCase();
+      // Skip images — handled separately
+      if (mime.startsWith('image/')) continue;
+      add({name:v.filename, dataUrl:v.dataUrl, mimeType:v.mimeType, source:'intercepted', note:'✓ data'});
+    }
+    // Also scan for any file chips with text name
     for (const chip of turn.querySelectorAll('[class*="FileCard"],[class*="AttachmentTile"],[class*="file-tile"],[data-message-file-name]')) {
       if (isInsideUI(chip)) continue;
       const name = chip.dataset?.messageFileName || chipText(chip);
-      if (!name) continue;
-      
-      const nameLower = name.toLowerCase().trim();
-      const hasDot = nameLower.includes('.');
-      const isSpecial = nameLower === 'zip' || nameLower === 'pasted';
-      if (!hasDot && !isSpecial) continue;
-      
-      const cleanName = name.replace(/^\d{10,13}_/, '');
-      if (isUINoiseFileName(cleanName)) continue;
-      if (turnChips.some(c => c.name.toLowerCase() === cleanName.toLowerCase())) continue;
-      turnChips.push({ name: cleanName, chip });
-    }
-
-    const unmatchedChips = [];
-    for (const item of turnChips) {
-      const stored = fromStore(item.name, store, consumedStore);
-      if (stored) {
-        consumedStore.add(stored);
-        add({
-          name: stored.filename || item.name,
-          dataUrl: stored.dataUrl,
-          mimeType: stored.mimeType,
-          source: 'chip-matched',
-          note: '✓ data'
-        });
-      } else {
-        unmatchedChips.push(item);
-      }
-    }
-
-    // Pair remaining unmatched chips with unmatched generic store files
-    const unmatchedGenericStored = [];
-    for (const [sk, sv] of Object.entries(store || {})) {
-      if (consumedStore.has(sv)) continue;
-      if (unmatchedGenericStored.includes(sv)) continue;
-      const filename = sv.filename || '';
-      const isGeneric = filename.toLowerCase().startsWith('file.') || filename.toLowerCase().startsWith('file_');
-      if (isGeneric) {
-        unmatchedGenericStored.push(sv);
-      }
-    }
-
-    // Step 1: Pair by matching extension/type
-    for (let cIdx = unmatchedChips.length - 1; cIdx >= 0; cIdx--) {
-      const chipItem = unmatchedChips[cIdx];
-      const chipExt = chipItem.name.split('.').pop()?.toLowerCase() || '';
-      
-      const gIdx = unmatchedGenericStored.findIndex(sv => {
-        const gExt = (sv.filename || '').split('.').pop()?.toLowerCase() || '';
-        return gExt === chipExt || mext(sv.mimeType) === chipExt;
-      });
-      
-      if (gIdx !== -1) {
-        const storedFile = unmatchedGenericStored.splice(gIdx, 1)[0];
-        consumedStore.add(storedFile);
-        add({
-          name: storedFile.filename || chipItem.name,
-          dataUrl: storedFile.dataUrl,
-          mimeType: storedFile.mimeType,
-          source: 'chip-paired-ext',
-          note: '✓ data'
-        });
-        unmatchedChips.splice(cIdx, 1);
-      }
-    }
-
-    // Step 2: Pair remaining by index order
-    const pairCount = Math.min(unmatchedChips.length, unmatchedGenericStored.length);
-    for (let idx = 0; idx < pairCount; idx++) {
-      const chipItem = unmatchedChips[idx];
-      const storedFile = unmatchedGenericStored[idx];
-      consumedStore.add(storedFile);
-      add({
-        name: storedFile.filename || chipItem.name,
-        dataUrl: storedFile.dataUrl,
-        mimeType: storedFile.mimeType,
-        source: 'chip-paired-fallback',
-        note: '✓ data'
-      });
-    }
-
-    // Step 3: Remaining unmatched chips are name-only
-    for (let idx = pairCount; idx < unmatchedChips.length; idx++) {
-      const chipItem = unmatchedChips[idx];
-      add({
-        name: chipItem.name,
-        source: 'chip',
-        note: 'name only'
-      });
+      if (!name||isUINoiseFileName(name)||seen.has(name.toLowerCase())) continue;
+      const stored = fromStore(name, store);
+      if (stored) add({name, dataUrl:stored.dataUrl, mimeType:stored.mimeType, source:'chip-matched', note:'✓ data'});
+      else add({name, source:'chip', note:'name only'});
     }
   }
 
@@ -757,29 +559,12 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
       for (const chip of turn.querySelectorAll(sel)) {
         if (isInsideUI(chip)) continue;
         const name = chipText(chip);
-        if (!name) continue;
-        
-        // Filter out dummy chips (must contain a dot or be a special identifier)
-        const nameLower = name.toLowerCase().trim();
-        const hasDot = nameLower.includes('.');
-        const isSpecial = nameLower === 'zip' || nameLower === 'pasted';
-        if (!hasDot && !isSpecial) continue;
-        
-        const cleanName = name.replace(/^\d{10,13}_/, '');
-        if (isUINoiseFileName(cleanName) || seen.has(cleanName.toLowerCase())) continue;
-        const fd = {name: cleanName, source:'claude-chip', note:'name only'};
+        if (!name||isUINoiseFileName(name)||seen.has(name.toLowerCase())) continue;
+        const fd = {name, source:'claude-chip', note:'name only'};
 
         // Check store first
-        const stored = fromStore(cleanName, store, consumedStore);
-        if (stored) {
-          consumedStore.add(stored);
-          fd.name = stored.filename || fd.name;
-          fd.dataUrl=stored.dataUrl;
-          fd.mimeType=stored.mimeType;
-          fd.note='✓ intercepted';
-          add(fd);
-          continue;
-        }
+        const stored = fromStore(name, store);
+        if (stored) { fd.dataUrl=stored.dataUrl; fd.mimeType=stored.mimeType; fd.note='✓ intercepted'; add(fd); continue; }
 
         // Find file ID
         let fileId = null;
@@ -793,21 +578,12 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
 
         if (fileId && orgId) {
           // Register name with page hook
-          window.dispatchEvent(new CustomEvent('__cepRegName',{detail:{fileId,filename:cleanName}}));
+          window.dispatchEvent(new CustomEvent('__cepRegName',{detail:{fileId,filename:name}}));
           // Try Claude Files API via background
           for (const suf of ['/content','']) {
             const url=`https://api2.claude.ai/api/organizations/${orgId}/files/${fileId}${suf}`;
             const r=await bg('fetchAsBase64',{url});
-            if (!r.error) {
-              fd.dataUrl=r.dataUrl;
-              fd.mimeType=r.mimeType;
-              fd.note='✓ claude-api';
-              // If we matched the API response, let's see if there is a store file with this dataurl to consume it
-              for (const [sk, sv] of Object.entries(store||{})) {
-                if (sv.dataUrl === r.dataUrl) consumedStore.add(sv);
-              }
-              break;
-            }
+            if (!r.error) { fd.dataUrl=r.dataUrl; fd.mimeType=r.mimeType; fd.note='✓ claude-api'; break; }
           }
         }
         add(fd);
@@ -815,236 +591,17 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
     }
   }
 
-  // ── Gemini & Grok / Generic Fallback ──────────────────────────────────────
-  if (PLAT === 'gemini' || PLAT === 'grok' || PLAT === 'unknown') {
-    // Helper: check if text looks like a real filename (not a sentence)
-    function isLikelyFileName(text) {
-      if (!text) return false;
-      const trimmed = text.trim();
-      if (trimmed.length < 2 || trimmed.length > 100) return false;
-      
-      const nameLower = trimmed.toLowerCase();
-      // Special keywords
-      if (nameLower === 'zip' || nameLower === 'pasted') return true;
-
-      // Must have a file extension pattern (e.g. filename.ext)
-      // Normal extensions are 2 to 5 alphanumeric characters
-      const match = trimmed.match(/\.([a-zA-Z0-9]{2,5})$/);
-      if (!match) return false;
-      
-      const ext = match[1].toLowerCase();
-      // Exclude common words that might be matched if a sentence ends with something like "no.1" or similar
-      const commonNonExts = ['js', 'css', 'html', 'json', 'xml', 'txt', 'csv', 'pdf', 'zip', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'docx', 'xlsx', 'pptx', 'py', 'sh', 'md', 'mp3', 'mp4', 'wav', 'tar', 'gz', 'rar'];
-      if (!commonNonExts.includes(ext) && !/^[a-z0-9]+$/.test(ext)) return false;
-
-      // Reject text with multiple spaces (looks like a sentence, not a filename)
-      if ((trimmed.match(/\s+/g) || []).length > 2) return false;
-      
-      // Reject text starting with common sentence patterns
-      if (/^(On |The |A |An |In |To |It |This |That |From |Moving |Finally |Below |Above |Under |After |Before |With |Here |There |Next |Then |First |Second )/i.test(trimmed)) return false;
-      
-      // Filenames should not contain sentence punctuation like commas, semicolons, question marks, exclamation marks
-      if (/[;?!,]/g.test(trimmed)) return false;
-
-      return true;
-    }
-
-    // Specific file-related selectors (high confidence)
-    const specificSels = [
-      '[class*="file-chip" i]', '[class*="attachment" i]', '[class*="file-preview" i]',
-      '[class*="document-chip" i]', '[class*="upload-file" i]', 'a[href*="blob:"]', 'a[download]',
-      'button[aria-label*="file" i]', 'button[aria-label*="attachment" i]',
-      '[class*="file" i]', '[class*="doc" i]', 'div[role="button"]'
-    ];
-    // Broad fallback selectors (low confidence — only use if nothing found above)
-    const broadSels = ['span', 'p', 'a'];
-
-    const turnChips = [];
-    let foundSpecific = false;
-
-    // First pass: try specific selectors
-    for (const sel of specificSels) {
-      for (const chip of turn.querySelectorAll(sel)) {
-        if (isInsideUI(chip)) continue;
-        const name = chipText(chip);
-        if (!name) continue;
-        const cleanName = name.replace(/^\d{10,13}_/, '');
-        
-        const nameLower = cleanName.toLowerCase().trim();
-        const hasDot = nameLower.includes('.');
-        const isSpecial = nameLower === 'zip' || nameLower === 'pasted';
-        if (!hasDot && !isSpecial) continue;
-        
-        if (isUINoiseFileName(cleanName) || seen.has(cleanName.toLowerCase())) continue;
-        if (turnChips.some(c => c.name.toLowerCase() === cleanName.toLowerCase())) continue;
-        turnChips.push({ name: cleanName, chip });
-        foundSpecific = true;
-      }
-    }
-
-    // Second pass: only try broad selectors if no specific chips found, with strict filename check
-    if (!foundSpecific) {
-      for (const sel of broadSels) {
-        for (const chip of turn.querySelectorAll(sel)) {
-          if (isInsideUI(chip)) continue;
-          const name = chipText(chip);
-          if (!name) continue;
-          const cleanName = name.replace(/^\d{10,13}_/, '');
-          
-          // Strict filter: must look like an actual filename, not a sentence
-          if (!isLikelyFileName(cleanName)) continue;
-          
-          if (isUINoiseFileName(cleanName) || seen.has(cleanName.toLowerCase())) continue;
-          if (turnChips.some(c => c.name.toLowerCase() === cleanName.toLowerCase())) continue;
-          turnChips.push({ name: cleanName, chip });
-        }
-      }
-    }
-
-    const unmatchedChips = [];
-    for (const item of turnChips) {
-      const stored = fromStore(item.name, store, consumedStore);
-      if (stored) {
-        consumedStore.add(stored);
-        add({
-          name: stored.filename || item.name,
-          dataUrl: stored.dataUrl,
-          mimeType: stored.mimeType,
-          source: PLAT + '-chip-matched',
-          note: '✓ intercepted'
-        });
-      } else {
-        unmatchedChips.push(item);
-      }
-    }
-
-    // Pair remaining unmatched chips with unmatched generic store files
-    const unmatchedGenericStored = [];
-    for (const [sk, sv] of Object.entries(store || {})) {
-      if (consumedStore.has(sv)) continue;
-      if (unmatchedGenericStored.includes(sv)) continue;
-      const filename = sv.filename || '';
-      const isGeneric = filename.toLowerCase().startsWith('file.') || filename.toLowerCase().startsWith('file_');
-      if (isGeneric) {
-        unmatchedGenericStored.push(sv);
-      }
-    }
-
-    // Step 1: Pair by matching extension/type
-    for (let cIdx = unmatchedChips.length - 1; cIdx >= 0; cIdx--) {
-      const chipItem = unmatchedChips[cIdx];
-      const chipExt = chipItem.name.split('.').pop()?.toLowerCase() || '';
-      
-      const gIdx = unmatchedGenericStored.findIndex(sv => {
-        const gExt = (sv.filename || '').split('.').pop()?.toLowerCase() || '';
-        return gExt === chipExt || mext(sv.mimeType) === chipExt;
-      });
-      
-      if (gIdx !== -1) {
-        const storedFile = unmatchedGenericStored.splice(gIdx, 1)[0];
-        consumedStore.add(storedFile);
-        add({
-          name: storedFile.filename || chipItem.name,
-          dataUrl: storedFile.dataUrl,
-          mimeType: storedFile.mimeType,
-          source: PLAT + '-chip-paired-ext',
-          note: '✓ intercepted'
-        });
-        unmatchedChips.splice(cIdx, 1);
-      }
-    }
-
-    // Step 2: Pair remaining by index order
-    const pairCount = Math.min(unmatchedChips.length, unmatchedGenericStored.length);
-    for (let idx = 0; idx < pairCount; idx++) {
-      const chipItem = unmatchedChips[idx];
-      const storedFile = unmatchedGenericStored[idx];
-      consumedStore.add(storedFile);
-      add({
-        name: storedFile.filename || chipItem.name,
-        dataUrl: storedFile.dataUrl,
-        mimeType: storedFile.mimeType,
-        source: PLAT + '-chip-paired-fallback',
-        note: '✓ intercepted'
-      });
-    }
-
-    // Step 3: Remaining unmatched chips are name-only
-    for (let idx = pairCount; idx < unmatchedChips.length; idx++) {
-      const chipItem = unmatchedChips[idx];
-      add({
-        name: chipItem.name,
-        source: PLAT + '-chip',
-        note: 'name only'
-      });
-    }
-  }
-
   return files;
 }
 
 function chipText(el) {
-  if (PLAT === 'chatgpt') {
-    const al = el.getAttribute('aria-label')||el.title||'';
-    if (al&&al.length<200&&(al.includes('.')||al.length>2)) return al.trim();
-    for (const s of el.querySelectorAll('span,p,[class*="name"],[class*="title"],[class*="filename"]')) {
-      const t=s.innerText?.trim();
-      if (t&&t.length>1&&t.length<200&&!t.includes('\n')) return t;
-    }
-    return el.innerText?.trim()?.split('\n')[0]?.trim()||null;
-  }
-
   const al = el.getAttribute('aria-label')||el.title||'';
-  let resolved = null;
-  if (al && al.length < 200) {
-    const cleanAl = al.trim();
-    if (!TYPE_BADGES.has(cleanAl.toUpperCase())) {
-      if (cleanAl.includes('.') || cleanAl.length > 2) {
-        resolved = cleanAl;
-      }
-    }
+  if (al&&al.length<200&&(al.includes('.')||al.length>2)) return al.trim();
+  for (const s of el.querySelectorAll('span,p,[class*="name"],[class*="title"],[class*="filename"]')) {
+    const t=s.innerText?.trim();
+    if (t&&t.length>1&&t.length<200&&!t.includes('\n')) return t;
   }
-  
-  if (!resolved) {
-    for (const s of el.querySelectorAll('span,p,[class*="name"],[class*="title"],[class*="filename"]')) {
-      const t = s.innerText?.trim();
-      if (t && t.length > 1 && t.length < 200 && !t.includes('\n')) {
-        const upperT = t.toUpperCase();
-        if (!TYPE_BADGES.has(upperT)) {
-          resolved = t;
-          break;
-        }
-      }
-    }
-  }
-  
-  if (!resolved) {
-    const lines = el.innerText?.trim()?.split('\n') || [];
-    for (const line of lines) {
-      const cleanLine = line.trim();
-      if (cleanLine.length > 1 && cleanLine.length < 200) {
-        const upper = cleanLine.toUpperCase();
-        if (!TYPE_BADGES.has(upper)) {
-          resolved = cleanLine;
-          break;
-        }
-      }
-    }
-  }
-
-  if (!resolved) {
-    resolved = el.innerText?.trim()?.split('\n')[0]?.trim() || null;
-  }
-
-  // Clean comma-joined details if the first part has an extension
-  if (resolved && resolved.includes(',')) {
-    const parts = resolved.split(',');
-    const part0 = parts[0].trim();
-    if (/\.[a-zA-Z0-9]{2,5}$/.test(part0)) {
-      resolved = part0;
-    }
-  }
-  return resolved;
+  return el.innerText?.trim()?.split('\n')[0]?.trim()||null;
 }
 
 // ── Auto-expand collapsed sections before extraction ──────────────────────────
@@ -1114,13 +671,7 @@ async function extractAll() {
   await expandCollapsedSections();
 
   const orgId = PLAT==='claude' ? getOrgId() : null;
-  const {files:store, authHeader, idMap} = await getStore();
-  console.log("[CEP] extractAll - Store keys:", Object.keys(store || {}), "hasAuth:", !!authHeader, "idMap:", idMap);
-  
-
-
-  const consumedStore = new Set();
-  const seenImageSrcs = new Set(); // Deduplicate images across turns
+  const {files:store} = await getStore();
 
   const result = {
     platform:PLAT, url:location.href,
@@ -1144,102 +695,29 @@ async function extractAll() {
     if (textKey && seenTexts.has(textKey)) continue;
     if (textKey) seenTexts.add(textKey);
 
-    const images= await extractImages(turn, idMap);
-    const files = await extractFiles(turn, store, orgId, consumedStore);
+    const images= await extractImages(turn);
+    const files = await extractFiles(turn, store, orgId);
 
-    // Deduplicate images by src URL across turns (Claude only — ChatGPT uses unique query params per image)
-    let finalImages = images;
-    if (PLAT === 'claude') {
-      finalImages = images.filter(img => {
-        const key = img.src.replace(/\?.*$/, ''); // strip query params for dedup
-        if (seenImageSrcs.has(key)) return false;
-        seenImageSrcs.add(key);
-        return true;
-      });
-    }
-
-    result.allImages.push(...finalImages);
+    result.allImages.push(...images);
     result.allFiles.push(...files);
-    if (text||finalImages.length||files.length) {
-      result.messages.push({index:i, role, text, images:finalImages, files});
+    if (text||images.length||files.length) {
+      result.messages.push({index:i, role, text, images, files});
     }
   }
 
-  // Add any generic/unconsumed store files that were not matched to any DOM chip
-  for (const [k, v] of Object.entries(store || {})) {
-    if (consumedStore.has(v)) continue;
-    if (!v.filename) continue;
-    const mime = (v.mimeType || '').toLowerCase();
-    
-    if (mime.startsWith('image/') || v.filename.toLowerCase().endsWith('.png') || v.filename.toLowerCase().endsWith('.jpg') || v.filename.toLowerCase().endsWith('.jpeg') || v.filename.toLowerCase().endsWith('.webp') || v.filename.toLowerCase().endsWith('.gif')) {
-      result.allImages.push({
-        src: v.url || '',
-        dataUrl: v.dataUrl,
-        mimeType: v.mimeType,
-        size: v.size || 0,
-        alt: v.filename
-      });
-    } else {
-      result.allFiles.push({
-        name: v.filename,
-        dataUrl: v.dataUrl,
-        mimeType: v.mimeType,
-        source: 'intercepted-fallback',
-        note: '✓ data'
-      });
-    }
-    consumedStore.add(v);
-  }
-
-  // Deduplicate images
-  const si=new Set();
-  result.allImages = result.allImages.filter(i=>{
-    const key = i.src || i.dataUrl;
-    if(!key || si.has(key)) return false;
-    si.add(key);
-    return true;
-  });
-
-  // Deduplicate files, preferring versions with dataUrl
-  const fileMap = new Map();
-  for (const f of result.allFiles) {
-    const key = f.name.toLowerCase();
-    const existing = fileMap.get(key);
-    if (!existing || (!existing.dataUrl && f.dataUrl)) {
-      fileMap.set(key, f);
-    }
-  }
-  result.allFiles = Array.from(fileMap.values());
+  // Deduplicate images and files
+  const si=new Set(), sf=new Set();
+  result.allImages = result.allImages.filter(i=>{if(si.has(i.src))return false;si.add(i.src);return true;});
+  result.allFiles  = result.allFiles.filter(f=>{if(sf.has(f.name))return false;sf.add(f.name);return true;});
 
   return result;
 }
 
 // ── File drop injection ───────────────────────────────────────────────────────
 function dataUrlToFile(dataUrl, name) {
-  try {
-    const arr = dataUrl.split(',');
-    const mimeMatch = arr[0].match(/:(.*?);/);
-    const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
-    const isBase64 = arr[0].includes('base64');
-    
-    let u8arr;
-    if (isBase64) {
-      const bstr = atob(arr[1]);
-      let n = bstr.length;
-      u8arr = new Uint8Array(n);
-      while (n--) {
-        u8arr[n] = bstr.charCodeAt(n);
-      }
-    } else {
-      const decoded = decodeURIComponent(arr[1]);
-      const encoder = new TextEncoder();
-      u8arr = encoder.encode(decoded);
-    }
-    return new File([u8arr], name, { type: mime });
-  } catch (e) {
-    console.error('[CEP] Error converting dataUrl to file:', e);
-    return null;
-  }
+  const arr=dataUrl.split(','), mime=arr[0].match(/:(.*?);/)[1];
+  const bytes=Uint8Array.from(atob(arr[1]),c=>c.charCodeAt(0));
+  return new File([bytes], name, {type:mime||'application/octet-stream'});
 }
 
 async function dropCapsule(cap) {
@@ -1273,15 +751,11 @@ async function dropCapsule(cap) {
     try {
       const mime=img.dataUrl.split(',')[0].match(/:(.*?);/)[1];
       const ext=mime.split('/')[1]?.split(';')[0]||'jpg';
-      const fileObj = dataUrlToFile(img.dataUrl,`image_${++ii}.${ext}`);
-      if (fileObj) allFiles.push(fileObj);
+      allFiles.push(dataUrlToFile(img.dataUrl,`image_${++ii}.${ext}`));
     } catch(e) { console.warn('[CEP] Bad image dataUrl:', e); }
   }
   for (const f of (cap.files||[]).filter(f=>f.dataUrl)) {
-    try {
-      const fileObj = dataUrlToFile(f.dataUrl, f.name);
-      if (fileObj) allFiles.push(fileObj);
-    } catch(e) { console.warn('[CEP] Bad file dataUrl:', e); }
+    try { allFiles.push(dataUrlToFile(f.dataUrl, f.name)); } catch(e) { console.warn('[CEP] Bad file dataUrl:', e); }
   }
 
   if (!allFiles.length) { toast(`💊 "${cap.name}" dropped!`); return; }
@@ -1295,9 +769,9 @@ async function dropCapsule(cap) {
     const composer = document.querySelector('form') || 
                      input.closest('[class*="composer" i],[class*="Composer" i],[class*="input" i],[class*="Input" i]') ||
                      document.body;
-    let fileInputs = querySelectorAllShadow('input[type="file"]', composer);
+    let fileInputs = Array.from(composer.querySelectorAll('input[type="file"]'));
     if (fileInputs.length === 0) {
-      fileInputs = querySelectorAllShadow('input[type="file"]');
+      fileInputs = Array.from(document.querySelectorAll('input[type="file"]'));
     }
 
     for (const fi of fileInputs) {
@@ -1458,11 +932,11 @@ async function checkPendingTransfer() {
         // If the capsule contains files, verify if we should wait for file input to appear
         const hasFiles = (transfer.capsule.images && transfer.capsule.images.length > 0) || 
                          (transfer.capsule.files && transfer.capsule.files.length > 0);
-        if (hasFiles && !querySelectorShadow('input[type="file"]')) {
+        if (hasFiles && !document.querySelector('input[type="file"]')) {
           attempts++;
           if (attempts >= 15) { // 3 seconds timeout (15 * 200ms) for file input to appear
             clearInterval(interval);
-            console.log("[CEP] Text input found, but file input not found after 3 seconds. Proceeding to drop capsule anyway.");
+            console.warn("[CEP] Text input found, but file input not found after 3 seconds. Proceeding to drop capsule anyway.");
             dropCapsule(transfer.capsule);
           }
           return; // Keep waiting for file input
