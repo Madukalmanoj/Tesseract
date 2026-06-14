@@ -852,6 +852,7 @@
         }
 
         // 3. Skip non-file responses
+        console.log("[CEP] fetch hook checking capture for URL:", url, "ContentType:", ct, "isCapture:", isCapture(url, ct));
         if (!isCapture(url, ct)) return resp;
 
         // 4. Capture arrayBuffer file content
@@ -989,6 +990,7 @@
             } catch(_) {}
           }
 
+          console.log("[CEP] XHR hook checking capture for URL:", url, "ContentType:", ct, "isCapture:", isCapture(url, ct));
           if (!isCapture(url,ct)) return;
           const respData = this.response;
           if (!respData) return;
