@@ -576,6 +576,13 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
     const k = fd.name?.toLowerCase();
     if (!k) return;
 
+    if (PLAT === 'chatgpt') {
+      if (seen.has(k)) return;
+      seen.add(k);
+      files.push(fd);
+      return;
+    }
+
     // Normalize k to strip .txt if it ends with .txt and contains a binary extension before it
     const base = k.endsWith('.txt') ? k.slice(0, -4) : k;
     if (seen.has(base) || seen.has(k)) return;
@@ -873,6 +880,16 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
 }
 
 function chipText(el) {
+  if (PLAT === 'chatgpt') {
+    const al = el.getAttribute('aria-label')||el.title||'';
+    if (al&&al.length<200&&(al.includes('.')||al.length>2)) return al.trim();
+    for (const s of el.querySelectorAll('span,p,[class*="name"],[class*="title"],[class*="filename"]')) {
+      const t=s.innerText?.trim();
+      if (t&&t.length>1&&t.length<200&&!t.includes('\n')) return t;
+    }
+    return el.innerText?.trim()?.split('\n')[0]?.trim()||null;
+  }
+
   const al = el.getAttribute('aria-label')||el.title||'';
   let resolved = null;
   if (al && al.length < 200) {
