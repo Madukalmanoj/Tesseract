@@ -499,12 +499,12 @@
     const fileUrl = u.includes('oaiusercontent') || u.includes('estuary') ||
       u.includes('/files/') || u.includes('file-service') ||
       u.includes('blob.core.windows') || u.includes('storage.googleapis') ||
-      u.includes('/api/organizations/') || u.includes('googleusercontent.com') ||
-      (u.includes('google.com') && (u.includes('/rd-gg/') || u.includes('filename=') || u.includes('content-disposition')));
+      u.includes('/api/organizations/');
     const fileMime = c.includes('pdf')||c.includes('zip')||c.includes('msword')||
       c.includes('officedocument')||c.includes('octet-stream')||
       c.includes('image/png')||c.includes('image/jpeg')||
-      c.includes('image/gif')||c.includes('image/webp');
+      c.includes('image/gif')||c.includes('image/webp')||
+      c.includes('text/plain')||c.includes('text/csv');
     return fileUrl || fileMime;
   }
 
