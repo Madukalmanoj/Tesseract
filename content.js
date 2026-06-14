@@ -537,10 +537,12 @@ async function extractImages(turn, idMap = {}) {
     if (img.getAttribute('aria-hidden')==='true') { console.log('[CEP] Skipped: aria-hidden'); continue; }
 
     // Skip avatar and profile picture elements (bypass for known uploaded/preview chat images)
+    const isGeminiUpload = PLAT === 'gemini' && (sl.includes('googleusercontent') || sl.includes('google.com'));
     const isUploadedImg = img.getAttribute('data-test-id') === 'uploaded-img' || 
                           (img.className && typeof img.className === 'string' && img.className.includes('preview-image')) ||
                           (sl.includes('twimg.com') && !sl.includes('profile_images')) ||
                           (sl.includes('x.com') && sl.includes('/media/')) ||
+                          isGeminiUpload ||
                           (PLAT === 'grok' && (
                             sl.includes('x.ai') ||
                             sl.includes('twimg.com') ||
@@ -566,13 +568,14 @@ async function extractImages(turn, idMap = {}) {
 
     const nw=img.naturalWidth, nh=img.naturalHeight;
     console.log('[CEP] Image natural size:', nw, 'x', nh);
-    if (nw>0&&nh>0&&nw<24&&nh<24) { console.log('[CEP] Skipped: too small'); continue; }
+    if (!isGeminiUpload && nw>0&&nh>0&&nw<24&&nh<24) { console.log('[CEP] Skipped: too small'); continue; }
     
     // Skip avatars on non-upload URLs
     const isUpload = sl.includes('blob:')||sl.includes('/files/')||sl.includes('oaiusercontent')||
                      sl.includes('upload')||sl.includes('/api/organizations/')||sl.includes('fileuploads')||
                      sl.includes('googleusercontent')||sl.includes('google.com')||
-                     sl.includes('x.ai')||sl.includes('twimg.com');
+                     sl.includes('x.ai')||sl.includes('twimg.com')||
+                     isGeminiUpload;
     if (!isUpload&&sl.includes('avatar')) { console.log('[CEP] Skipped: non-upload avatar keyword'); continue; }
 
     // Fetch same-origin blob/data URLs directly in content script context
