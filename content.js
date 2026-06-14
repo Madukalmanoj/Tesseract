@@ -52,6 +52,20 @@ function getOrgId() {
 // ── Fuzzy store lookup ───────────────────────────────────────────────────────
 function fromStore(name, store, consumedStore = new Set()) {
   if (!store||!name) return null;
+
+  if (PLAT === 'chatgpt') {
+    const k = name.toLowerCase().trim();
+    if (store[k] && !consumedStore.has(store[k])) return store[k];
+    const noext = k.replace(/\.[^.]+$/,'');
+    for (const [sk,sv] of Object.entries(store)) {
+      if (consumedStore.has(sv)) continue;
+      if (sk===noext) return sv;
+      if (sk.includes(noext)) return sv;
+      if (noext.includes(sk.replace(/\.[^.]+$/,''))) return sv;
+    }
+    return null;
+  }
+
   const cleanName = name.replace(/^\d{10,13}_/, '');
   const k = cleanName.toLowerCase().trim();
   

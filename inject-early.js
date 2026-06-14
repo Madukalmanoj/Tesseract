@@ -1,6 +1,8 @@
 // OmniExtract — Page-context hook (MAIN world, document_start)
 (function() {
   if (window.__cep) return;
+  const IS_CLAUDE = window.location.hostname.includes('claude.ai');
+
   window.__cep = {
     files: {},      // lcName → {dataUrl,mimeType,filename,url}
     urlMap: {},     // downloadUrl → filename (set from /download JSON)
@@ -10,6 +12,7 @@
     orgId:  null,
     authHeader: null,
     oaiHeaders: {},
+    claudeHeaders: {},
     lastConvId: null
   };
 
@@ -24,12 +27,15 @@
       } else if (hl.startsWith('oai-')) {
         window.__cep.oaiHeaders[hl] = value;
         console.log("[CEP] Captured XHR OAI header:", header, value);
+      } else if (IS_CLAUDE) {
+        if (hl.startsWith('anthropic-') || hl === 'organization-id' || hl === 'custom-agent-id') {
+          window.__cep.claudeHeaders[header] = value;
+          console.log("[CEP] Captured XHR Claude header:", header, value);
+        }
       }
     }
     return _xsetHeader.apply(this, [header, value]);
   };
-
-  const IS_CLAUDE = window.location.hostname.includes('claude.ai');
 
   function toDataUrl(bufferOrBlob, ct) {
     return new Promise((ok, fail) => {
@@ -516,22 +522,29 @@
     // Inspect request body (for capturing uploads, including Request objects)
     inspectRequest(req, opts, url).catch(_=>{});
 
-    // Capture auth and OAI headers
+    // Capture auth, OAI, and Claude headers
     let auth = null;
     const oaiHeaders = {};
+    const claudeHeaders = {};
     if (opts.headers) {
       if (opts.headers instanceof Headers) {
         auth = opts.headers.get('Authorization') || opts.headers.get('authorization');
         for (const [hk, hv] of opts.headers.entries()) {
-          if (hk.toLowerCase().startsWith('oai-')) {
-            oaiHeaders[hk.toLowerCase()] = hv;
+          const hkl = hk.toLowerCase();
+          if (hkl.startsWith('oai-')) {
+            oaiHeaders[hkl] = hv;
+          } else if (IS_CLAUDE && (hkl.startsWith('anthropic-') || hkl === 'organization-id' || hkl === 'custom-agent-id')) {
+            claudeHeaders[hk] = hv;
           }
         }
       } else {
         for (const [hk, hv] of Object.entries(opts.headers)) {
-          if (hk.toLowerCase() === 'authorization') { auth = hv; }
-          if (hk.toLowerCase().startsWith('oai-')) {
-            oaiHeaders[hk.toLowerCase()] = hv;
+          const hkl = hk.toLowerCase();
+          if (hkl === 'authorization') { auth = hv; }
+          if (hkl.startsWith('oai-')) {
+            oaiHeaders[hkl] = hv;
+          } else if (IS_CLAUDE && (hkl.startsWith('anthropic-') || hkl === 'organization-id' || hkl === 'custom-agent-id')) {
+            claudeHeaders[hk] = hv;
           }
         }
       }
@@ -540,15 +553,21 @@
       if (req.headers instanceof Headers) {
         if (!auth) auth = req.headers.get('Authorization') || req.headers.get('authorization');
         for (const [hk, hv] of req.headers.entries()) {
-          if (hk.toLowerCase().startsWith('oai-')) {
-            oaiHeaders[hk.toLowerCase()] = hv;
+          const hkl = hk.toLowerCase();
+          if (hkl.startsWith('oai-')) {
+            oaiHeaders[hkl] = hv;
+          } else if (IS_CLAUDE && (hkl.startsWith('anthropic-') || hkl === 'organization-id' || hkl === 'custom-agent-id')) {
+            claudeHeaders[hk] = hv;
           }
         }
       } else {
         for (const [hk, hv] of Object.entries(req.headers)) {
-          if (hk.toLowerCase() === 'authorization') { if (!auth) auth = hv; }
-          if (hk.toLowerCase().startsWith('oai-')) {
-            oaiHeaders[hk.toLowerCase()] = hv;
+          const hkl = hk.toLowerCase();
+          if (hkl === 'authorization') { if (!auth) auth = hv; }
+          if (hkl.startsWith('oai-')) {
+            oaiHeaders[hkl] = hv;
+          } else if (IS_CLAUDE && (hkl.startsWith('anthropic-') || hkl === 'organization-id' || hkl === 'custom-agent-id')) {
+            claudeHeaders[hk] = hv;
           }
         }
       }
@@ -560,6 +579,10 @@
     if (Object.keys(oaiHeaders).length > 0) {
       Object.assign(window.__cep.oaiHeaders, oaiHeaders);
       console.log("[CEP] Captured OAI headers:", Object.keys(oaiHeaders));
+    }
+    if (Object.keys(claudeHeaders).length > 0) {
+      Object.assign(window.__cep.claudeHeaders, claudeHeaders);
+      console.log("[CEP] Captured Claude headers:", Object.keys(claudeHeaders));
     }
 
     // org ID
@@ -922,7 +945,8 @@
         try {
           const res = await _fetch(`/api/organizations/${orgId}/chat_conversations/${convId}?tree=true&rendering_mode=messages&render_all_tools=true`, {
             headers: {
-              'accept': 'application/json'
+              'accept': 'application/json',
+              ...window.__cep.claudeHeaders
             },
             credentials: 'include'
           });
@@ -964,6 +988,10 @@
                   for (const endpoint of endpoints) {
                     try {
                       const tempRes = await _fetch(endpoint, {
+                        headers: {
+                          'accept': 'application/json',
+                          ...window.__cep.claudeHeaders
+                        },
                         credentials: 'include'
                       });
                       lastStatus = tempRes.status;
@@ -976,7 +1004,14 @@
                             const downloadUrl = findDownloadUrl(json);
                             if (downloadUrl) {
                               window.__cep.downloadUrlMap[fileId] = downloadUrl;
-                              const fRes = await _fetch(downloadUrl);
+                              let fileHeaders = {};
+                              if (downloadUrl.startsWith('/') || downloadUrl.includes('claude.ai')) {
+                                fileHeaders = { ...window.__cep.claudeHeaders };
+                              }
+                              const fRes = await _fetch(downloadUrl, {
+                                headers: fileHeaders,
+                                credentials: 'include'
+                              });
                               if (fRes.ok) {
                                 fileRes = fRes;
                                 break;
