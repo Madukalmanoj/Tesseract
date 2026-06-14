@@ -9,6 +9,7 @@
     idMap:  {},     // fileId → filename
     downloadUrlMap: {}, // fileId → downloadUrl (to fetch via background if CORS fails)
     extractedContentMap: {}, // fileId → extracted_content text fallback
+    filePathMap: {}, // fileId → server-side path (e.g. /mnt/user-data/uploads/file.zip)
     orgId:  null,
     authHeader: null,
     oaiHeaders: {},
@@ -1163,6 +1164,7 @@
           window.__cep.files = {};
           window.__cep.idMap = {};
           window.__cep.urlMap = {};
+          window.__cep.filePathMap = {};
         }
         window.__cep.lastConvId = convId;
       }
@@ -1191,16 +1193,53 @@
               });
             }
             scanJsonForFiles(data);
+
+            // Extract file paths from tree for wiggle/download-file endpoint (for blob files like ZIPs)
+            if (data && data.chat_messages) {
+              for (const msg of data.chat_messages) {
+                const fileEntries = [...(msg.files || []), ...(msg.attachments || [])];
+                for (const f of fileEntries) {
+                  const fId = f.file_uuid || f.uuid || f.id;
+                  const fPath = f.path;
+                  if (fId && fPath && typeof fPath === 'string' && fPath.startsWith('/mnt/')) {
+                    window.__cep.filePathMap[fId] = fPath;
+                  }
+                }
+              }
+            }
              
-            console.log("[CEP] __cepQuery (Claude): Parsed tree. idMap:", JSON.stringify(window.__cep.idMap));
+            console.log("[CEP] __cepQuery (Claude): Parsed tree. idMap:", JSON.stringify(window.__cep.idMap), "filePathMap:", JSON.stringify(window.__cep.filePathMap));
             
-            // On-demand fetch file binaries programmatically in the page context (same-origin, cookie & auth-safe!)
-            for (const [fileId, filename] of Object.entries(window.__cep.idMap)) {
+            // On-demand fetch file binaries in PARALLEL (all files concurrently) to stay within getStore timeout
+            const _downloadEntries = Object.entries(window.__cep.idMap);
+            console.log("[CEP] On-demand: Starting parallel download for", _downloadEntries.length, "files");
+            await Promise.all(_downloadEntries.map(async ([fileId, filename]) => {
               const k = filename.toLowerCase().trim();
-              // Only download valid Claude storage IDs (36-character UUID)
               const isClaudeFile = typeof fileId === 'string' && /^[a-f0-9-]{36}$/.test(fileId);
               if (!window.__cep.files[k] && isClaudeFile) {
-                // Attempt direct same-origin paths first (to bypass CORS and utilize same-site session cookies)
+                // Try the wiggle/download-file endpoint FIRST for blob files (ZIPs, etc.)
+                // This is the endpoint Claude's own UI uses for file downloads
+                const filePath = window.__cep.filePathMap[fileId];
+                if (filePath && convId) {
+                  try {
+                    const wiggleUrl = `/api/organizations/${orgId}/conversations/${convId}/wiggle/download-file?path=${encodeURIComponent(filePath)}`;
+                    console.log("[CEP] Trying wiggle download for:", filename, wiggleUrl);
+                    const wiggleRes = await _fetch(wiggleUrl, { credentials: 'include' });
+                    if (wiggleRes.ok) {
+                      const buffer = await wiggleRes.arrayBuffer();
+                      const ct = wiggleRes.headers.get('content-type') || 'application/octet-stream';
+                      const dataUrl = await toDataUrl(buffer, ct);
+                      save(filename, dataUrl, ct, wiggleUrl);
+                      console.log("[CEP] ✅ Wiggle download succeeded for:", filename, "size:", buffer.byteLength);
+                      return; // Done — skip other endpoints
+                    } else {
+                      console.log("[CEP] Wiggle download failed for:", filename, "status:", wiggleRes.status);
+                    }
+                  } catch(err) {
+                    console.warn("[CEP] Wiggle download error for:", filename, err);
+                  }
+                }
+
                 const endpoints = [
                   `/api/${orgId}/files/${fileId}/content`,
                   `/api/${orgId}/files/${fileId}/document_pdf`,
@@ -1211,7 +1250,7 @@
                   `/api/organizations/${orgId}/files/${fileId}/content`,
                   `/api/organizations/${orgId}/files/${fileId}`
                 ];
-                console.log("[CEP] On-demand page-context fetching Claude file:", filename, "fileId:", fileId, "endpoints:", endpoints);
+                console.log("[CEP] On-demand page-context fetching Claude file:", filename, "fileId:", fileId);
                 try {
                   let fileRes = null;
                   let lastStatus = 0;
@@ -1276,7 +1315,7 @@
                     save(filename, dataUrl, ct, fileRes.url);
                     console.log("[CEP] On-demand successfully saved Claude file:", filename);
                   } else {
-                    // Fallback to extracted_content if download failed or not possible (e.g. user-uploaded docs on Claude)
+                    // Fallback to extracted_content if download failed
                     const extContent = window.__cep.extractedContentMap[fileId];
                     if (extContent) {
                       const base64 = btoa(unescape(encodeURIComponent(extContent)));
@@ -1291,7 +1330,7 @@
                   console.warn("[CEP] Failed on-demand Claude fetch for file:", filename, e);
                 }
               }
-            }
+            }));
           }
         } catch(e) {
           console.warn("[CEP] On-demand Claude conversation fetch failed:", e);

@@ -22,7 +22,7 @@ function bg(action, data) {
 // ── Get intercepted store from page hook ─────────────────────────────────────
 function getStore() {
   return new Promise(ok => {
-    const t = setTimeout(()=>ok({files:{},orgId:null}), 15000);
+    const t = setTimeout(()=>ok({files:{},orgId:null}), 60000);
     window.addEventListener('__cepReply', function h(e) {
       clearTimeout(t); window.removeEventListener('__cepReply',h);
       ok(e.detail||{files:{},orgId:null});
@@ -814,14 +814,35 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
 
   // ── Gemini & Grok / Generic Fallback ──────────────────────────────────────
   if (PLAT === 'gemini' || PLAT === 'grok' || PLAT === 'unknown') {
-    const chipSels = [
+    // Helper: check if text looks like a real filename (not a sentence)
+    function isLikelyFileName(text) {
+      if (!text || text.length > 120) return false;
+      // Must have a file extension pattern (word.ext at the end)
+      if (/\.\w{1,10}$/.test(text.trim())) return true;
+      // Special keywords
+      if (/^(zip|pasted)$/i.test(text.trim())) return true;
+      // Reject text with multiple spaces (looks like a sentence, not a filename)
+      if ((text.match(/ /g) || []).length > 3) return false;
+      // Reject text starting with common sentence patterns
+      if (/^(On |The |A |An |In |To |It |This |That |From |Moving |Finally |Below |Above )/i.test(text)) return false;
+      return false;
+    }
+
+    // Specific file-related selectors (high confidence)
+    const specificSels = [
       '[class*="file-chip" i]', '[class*="attachment" i]', '[class*="file-preview" i]',
       '[class*="document-chip" i]', '[class*="upload-file" i]', 'a[href*="blob:"]', 'a[download]',
       'button[aria-label*="file" i]', 'button[aria-label*="attachment" i]',
-      '[class*="file" i]', '[class*="doc" i]', 'div[role="button"]', 'span', 'p', 'a'
+      '[class*="file" i]', '[class*="doc" i]', 'div[role="button"]'
     ];
+    // Broad fallback selectors (low confidence — only use if nothing found above)
+    const broadSels = ['span', 'p', 'a'];
+
     const turnChips = [];
-    for (const sel of chipSels) {
+    let foundSpecific = false;
+
+    // First pass: try specific selectors
+    for (const sel of specificSels) {
       for (const chip of turn.querySelectorAll(sel)) {
         if (isInsideUI(chip)) continue;
         const name = chipText(chip);
@@ -836,6 +857,26 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
         if (isUINoiseFileName(cleanName) || seen.has(cleanName.toLowerCase())) continue;
         if (turnChips.some(c => c.name.toLowerCase() === cleanName.toLowerCase())) continue;
         turnChips.push({ name: cleanName, chip });
+        foundSpecific = true;
+      }
+    }
+
+    // Second pass: only try broad selectors if no specific chips found, with strict filename check
+    if (!foundSpecific) {
+      for (const sel of broadSels) {
+        for (const chip of turn.querySelectorAll(sel)) {
+          if (isInsideUI(chip)) continue;
+          const name = chipText(chip);
+          if (!name) continue;
+          const cleanName = name.replace(/^\d{10,13}_/, '');
+          
+          // Strict filter: must look like an actual filename, not a sentence
+          if (!isLikelyFileName(cleanName)) continue;
+          
+          if (isUINoiseFileName(cleanName) || seen.has(cleanName.toLowerCase())) continue;
+          if (turnChips.some(c => c.name.toLowerCase() === cleanName.toLowerCase())) continue;
+          turnChips.push({ name: cleanName, chip });
+        }
       }
     }
 
@@ -1058,6 +1099,7 @@ async function extractAll() {
 
 
   const consumedStore = new Set();
+  const seenImageSrcs = new Set(); // Deduplicate images across turns
 
   const result = {
     platform:PLAT, url:location.href,
@@ -1084,10 +1126,21 @@ async function extractAll() {
     const images= await extractImages(turn, idMap);
     const files = await extractFiles(turn, store, orgId, consumedStore);
 
-    result.allImages.push(...images);
+    // Deduplicate images by src URL across turns (Claude only — ChatGPT uses unique query params per image)
+    let finalImages = images;
+    if (PLAT === 'claude') {
+      finalImages = images.filter(img => {
+        const key = img.src.replace(/\?.*$/, ''); // strip query params for dedup
+        if (seenImageSrcs.has(key)) return false;
+        seenImageSrcs.add(key);
+        return true;
+      });
+    }
+
+    result.allImages.push(...finalImages);
     result.allFiles.push(...files);
-    if (text||images.length||files.length) {
-      result.messages.push({index:i, role, text, images, files});
+    if (text||finalImages.length||files.length) {
+      result.messages.push({index:i, role, text, images:finalImages, files});
     }
   }
 
