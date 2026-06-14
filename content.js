@@ -591,6 +591,23 @@ async function extractFiles(turn, store, orgId) {
     }
   }
 
+  // ── Gemini: fallback/store scanner ───────────────────────────────────────
+  if (PLAT === 'gemini') {
+    // Add all non-image files stored in window.__cep.files
+    for (const [k, v] of Object.entries(store || {})) {
+      if (!v.filename) continue;
+      const mime = (v.mimeType || '').toLowerCase();
+      if (mime.startsWith('image/')) continue;
+      add({
+        name: v.filename,
+        dataUrl: v.dataUrl,
+        mimeType: v.mimeType,
+        source: 'gemini-intercepted',
+        note: '✓ data'
+      });
+    }
+  }
+
   return files;
 }
 
