@@ -22,14 +22,9 @@
   XMLHttpRequest.prototype.setRequestHeader = function(header, value) {
     if (header) {
       const hl = header.toLowerCase();
-      if (hl === 'authorization' || hl === 'x-goog-authuser' || (value && typeof value === 'string' && value.startsWith('SAPISIDHASH'))) {
-        if (value !== '0') {
-          // Do not overwrite authHeader if it's a Google-specific SAPISIDHASH or x-goog-authuser, keeping Claude/ChatGPT credentials clean
-          if (!hl.includes('authuser') && !value.startsWith('SAPISIDHASH')) {
-            window.__cep.authHeader = value;
-          }
-          console.log("[CEP] Captured XHR Authorization header:", value.slice(0, 20) + "...");
-        }
+      if (hl === 'authorization') {
+        window.__cep.authHeader = value;
+        console.log("[CEP] Captured XHR Authorization header:", value.slice(0, 20) + "...");
       } else if (hl.startsWith('oai-')) {
         window.__cep.oaiHeaders[hl] = value;
         console.log("[CEP] Captured XHR OAI header:", header, value);
@@ -506,12 +501,10 @@
       u.includes('blob.core.windows') || u.includes('storage.googleapis') ||
       u.includes('/api/organizations/') || u.includes('googleusercontent.com') ||
       (u.includes('google.com') && (u.includes('/rd-gg/') || u.includes('filename=') || u.includes('content-disposition')));
-    const isGoogle = u.includes('googleusercontent.com') || u.includes('google.com');
     const fileMime = c.includes('pdf')||c.includes('zip')||c.includes('msword')||
       c.includes('officedocument')||c.includes('octet-stream')||
       c.includes('image/png')||c.includes('image/jpeg')||
-      c.includes('image/gif')||c.includes('image/webp')||
-      (!isGoogle && (c.includes('text/plain')||c.includes('text/csv')));
+      c.includes('image/gif')||c.includes('image/webp');
     return fileUrl || fileMime;
   }
 
@@ -776,7 +769,7 @@
       const oaiHeaders = {};
       if (opts.headers) {
         if (opts.headers instanceof Headers) {
-          auth = opts.headers.get('Authorization') || opts.headers.get('authorization') || opts.headers.get('x-goog-authuser');
+          auth = opts.headers.get('Authorization') || opts.headers.get('authorization');
           for (const [hk, hv] of opts.headers.entries()) {
             if (hk.toLowerCase().startsWith('oai-')) {
               oaiHeaders[hk.toLowerCase()] = hv;
@@ -784,17 +777,16 @@
           }
         } else {
           for (const [hk, hv] of Object.entries(opts.headers)) {
-            const hkl = hk.toLowerCase();
-            if (hkl === 'authorization' || hkl === 'x-goog-authuser' || (hv && typeof hv === 'string' && hv.startsWith('SAPISIDHASH'))) { auth = hv; }
-            if (hkl.startsWith('oai-')) {
-              oaiHeaders[hkl] = hv;
+            if (hk.toLowerCase() === 'authorization') { auth = hv; }
+            if (hk.toLowerCase().startsWith('oai-')) {
+              oaiHeaders[hk.toLowerCase()] = hv;
             }
           }
         }
       }
       if (req instanceof Request && req.headers) {
         if (req.headers instanceof Headers) {
-          if (!auth) auth = req.headers.get('Authorization') || req.headers.get('authorization') || req.headers.get('x-goog-authuser');
+          if (!auth) auth = req.headers.get('Authorization') || req.headers.get('authorization');
           for (const [hk, hv] of req.headers.entries()) {
             if (hk.toLowerCase().startsWith('oai-')) {
               oaiHeaders[hk.toLowerCase()] = hv;
@@ -802,18 +794,15 @@
           }
         } else {
           for (const [hk, hv] of Object.entries(req.headers)) {
-            const hkl = hk.toLowerCase();
-            if (hkl === 'authorization' || hkl === 'x-goog-authuser' || (hv && typeof hv === 'string' && hv.startsWith('SAPISIDHASH'))) { if (!auth) auth = hv; }
-            if (hkl.startsWith('oai-')) {
-              oaiHeaders[hkl] = hv;
+            if (hk.toLowerCase() === 'authorization') { if (!auth) auth = hv; }
+            if (hk.toLowerCase().startsWith('oai-')) {
+              oaiHeaders[hk.toLowerCase()] = hv;
             }
           }
         }
       }
-      if (auth && auth !== '0') {
-        if (!auth.startsWith('SAPISIDHASH')) {
-          window.__cep.authHeader = auth;
-        }
+      if (auth) {
+        window.__cep.authHeader = auth;
         console.log("[CEP] Captured fetch Authorization header:", auth.slice(0, 20) + "...");
       }
       if (Object.keys(oaiHeaders).length > 0) {
@@ -860,7 +849,6 @@
         }
 
         // 3. Skip non-file responses
-        console.log("[CEP] fetch hook checking capture for URL:", url, "ContentType:", ct, "isCapture:", isCapture(url, ct));
         if (!isCapture(url, ct)) return resp;
 
         // 4. Capture arrayBuffer file content
@@ -997,28 +985,7 @@
               scanJsonForFiles(d);
             } catch(_) {}
           }
-          // Gemini batchexecute JSON capture
-          if (url.includes('batchexecute') && ct.includes('application/json')) {
-            try {
-              const text = this.responseText;
-              // Look for googleusercontent URLs (chat images) or other filenames
-              const urls = text.match(/https?:\/\/[^\s"']+\.googleusercontent\.com\/[^\s"']+/g) || [];
-              for (const u of urls) {
-                const cleanUrl = u.replace(/\\/g, '');
-                // Gemini images in response payload often have clean URLs or parameters.
-                // We map and download them, or trigger dynamic fetch:
-                const name = 'gemini_image_' + Date.now() + '.png';
-                // Trigger content script fetching:
-                window.fetch(cleanUrl).then(r => r.blob()).then(blob => {
-                  toDataUrl(blob, blob.type).then(dataUrl => {
-                    save(name, dataUrl, blob.type, cleanUrl);
-                  });
-                }).catch(_=>{});
-              }
-            } catch(_) {}
-          }
 
-          console.log("[CEP] XHR hook checking capture for URL:", url, "ContentType:", ct, "isCapture:", isCapture(url, ct));
           if (!isCapture(url,ct)) return;
           const respData = this.response;
           if (!respData) return;
