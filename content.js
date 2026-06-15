@@ -129,6 +129,7 @@ function findTurns() {
   else if (PLAT === 'gemini') {
     for (const s of ['user-query', 'model-response', 'model-turn', '[class*="user-query"]', '[class*="model-response"]', '[class*="model-turn"]']) {
       for (const el of document.querySelectorAll(s)) {
+        if (el.classList?.contains('cdk-visually-hidden') || el.className?.includes('screen-reader') || el.getAttribute('aria-hidden') === 'true') continue;
         if (!seen.has(el)) { seen.add(el); found.push(el); }
       }
     }
