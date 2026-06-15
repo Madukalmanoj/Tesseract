@@ -127,10 +127,19 @@ function findTurns() {
   }
 
   else if (PLAT === 'gemini') {
-    for (const s of ['user-query', 'model-response', 'model-turn', '[class*="user-query"]', '[class*="model-response"]', '[class*="model-turn"]']) {
+    // Try custom element tag names first (standard Gemini structure)
+    for (const s of ['user-query', 'model-response', 'model-turn']) {
       for (const el of document.querySelectorAll(s)) {
-        if (el.classList?.contains('cdk-visually-hidden') || el.className?.includes('screen-reader') || el.getAttribute('aria-hidden') === 'true') continue;
         if (!seen.has(el)) { seen.add(el); found.push(el); }
+      }
+    }
+    // Fallback to classes only if no tags are found
+    if (!found.length) {
+      for (const s of ['[class*="user-query"]', '[class*="model-response"]', '[class*="model-turn"]']) {
+        for (const el of document.querySelectorAll(s)) {
+          if (el.classList?.contains('cdk-visually-hidden') || el.className?.includes('screen-reader') || el.getAttribute('aria-hidden') === 'true') continue;
+          if (!seen.has(el)) { seen.add(el); found.push(el); }
+        }
       }
     }
   }
