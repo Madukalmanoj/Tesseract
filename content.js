@@ -1307,8 +1307,131 @@ async function expandCollapsedSections() {
   }
 }
 
+function findSurroundingFilename(el) {
+  if (!el) return '';
+  let name = el.download || el.getAttribute('download') || '';
+  if (name && name.toLowerCase() !== 'download') return name;
+  
+  const al = el.getAttribute('aria-label') || el.getAttribute('title') || '';
+  if (al && al.toLowerCase() !== 'download') {
+    const m = al.match(/download\s+(.+)/i);
+    if (m) return m[1];
+    return al;
+  }
+  
+  let curr = el;
+  for (let depth = 0; depth < 5; depth++) {
+    if (!curr) break;
+    const parent = curr.parentElement;
+    if (parent) {
+      const text = parent.innerText || parent.textContent || '';
+      const m = text.match(/[\w\s-_\(\)]+\.(pdf|docx|doc|zip|xlsx|xls|pptx|ppt|txt|csv|py|json|sh|js|html|css|md)/i);
+      if (m) return m[0];
+    }
+    curr = parent;
+  }
+  return '';
+}
+
+async function triggerGeminiFileDownloads() {
+  console.log('[CEP] Gemini: scanning for file preview cards and citation chips...');
+  
+  // Find all file preview buttons inside the user query blocks
+  const queryFileCards = querySelectorAllShadow('button.new-file-preview-file, [data-test-id="uploaded-file"] button, .file-preview-container button', document);
+  
+  // Find all citation chips in the assistant responses
+  const citationChips = querySelectorAllShadow('.source-inline-chip-container button, [aria-label*="source details" i]', document);
+  
+  const clickTargets = [];
+  const seenTargets = new Set();
+  
+  for (const el of [...queryFileCards, ...citationChips]) {
+    if (seenTargets.has(el)) continue;
+    seenTargets.add(el);
+    clickTargets.push(el);
+  }
+  
+  if (clickTargets.length === 0) {
+    console.log('[CEP] Gemini: no file download click targets found');
+    return;
+  }
+  
+  console.log('[CEP] Gemini: Found file targets count:', clickTargets.length, '— triggering modal/panels...');
+  
+  for (const target of clickTargets) {
+    try {
+      console.log('[CEP] Gemini: Clicking target to open preview/citation details...', target);
+      target.click();
+      
+      // Wait for panel/modal to open
+      await new Promise(ok => setTimeout(ok, 450));
+      
+      // Find all download buttons now visible on the page
+      const downloadBtns = querySelectorAllShadow('[aria-label*="Download" i], [title*="Download" i], button[class*="download" i], a[class*="download" i], [class*="download" i]', document);
+      if (downloadBtns.length > 0) {
+        console.log('[CEP] Gemini: Found download buttons in view:', downloadBtns.length);
+        for (const btn of downloadBtns) {
+          let pageStore = await getStore();
+          const beforeCount = (pageStore.interceptedDownloads || []).length;
+          
+          console.log('[CEP] Gemini: Clicking download button:', btn);
+          btn.click();
+          
+          // Wait up to 1 second for the main-world hook to intercept the URL
+          for (let wait = 0; wait < 10; wait++) {
+            await new Promise(ok => setTimeout(ok, 100));
+            pageStore = await getStore();
+            const afterCount = (pageStore.interceptedDownloads || []).length;
+            if (afterCount > beforeCount) {
+              const newDownload = pageStore.interceptedDownloads[pageStore.interceptedDownloads.length - 1];
+              // Resolve filename
+              const filename = newDownload.filename || findSurroundingFilename(btn) || findSurroundingFilename(target);
+              if (filename) {
+                console.log('[CEP] Gemini: Fetching intercepted download:', filename, newDownload.url);
+                const r = await bg('fetchAsBase64', { url: newDownload.url });
+                if (!r.error && r.dataUrl) {
+                  // Save to page store
+                  window.dispatchEvent(new CustomEvent('__cepStore', {
+                    detail: {
+                      filename: filename,
+                      dataUrl: r.dataUrl,
+                      mimeType: r.mimeType || 'application/octet-stream',
+                      url: newDownload.url
+                    }
+                  }));
+                  console.log('[CEP] Gemini: Successfully saved file to store:', filename);
+                }
+              }
+              break;
+            }
+          }
+        }
+      }
+      
+      // Close the modal/panel to cleanup
+      const closeBtns = querySelectorAllShadow('button[aria-label*="Close" i], button[title*="Close" i], [class*="close" i], .close-button', document);
+      for (const closeBtn of closeBtns) {
+        const txt = closeBtn.innerText || closeBtn.getAttribute('aria-label') || closeBtn.getAttribute('title') || '';
+        if (txt.toLowerCase().includes('close') || closeBtn.classList?.contains('close-button') || closeBtn.className?.includes('close')) {
+          closeBtn.click();
+          await new Promise(ok => setTimeout(ok, 150));
+        }
+      }
+    } catch (e) {
+      console.warn('[CEP] Gemini: error clicking file target/downloads:', e);
+    }
+  }
+  
+  console.log('[CEP] Gemini: file scanning and downloads complete');
+}
+
 // ── Main extraction ───────────────────────────────────────────────────────────
 async function extractAll() {
+  if (PLAT === 'gemini') {
+    // Dynamically trigger all query file preview viewer modals and citation side panels to capture their download URLs in the store
+    await triggerGeminiFileDownloads();
+  }
+
   // Expand all collapsed sections first so we can capture hidden content
   await expandCollapsedSections();
 

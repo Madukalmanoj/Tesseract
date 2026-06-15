@@ -269,11 +269,41 @@
     window.addEventListener('popstate', onGeminiNavigate);
 
     // ── Gemini: Intercept and capture download URLs ──
-    function captureDownloadUrl(url, filename = '') {
+    function findSurroundingFilename(el) {
+      if (!el) return '';
+      let name = el.download || el.getAttribute('download') || '';
+      if (name && name.toLowerCase() !== 'download') return name;
+      
+      const al = el.getAttribute('aria-label') || el.getAttribute('title') || '';
+      if (al && al.toLowerCase() !== 'download') {
+        const m = al.match(/download\s+(.+)/i);
+        if (m) return m[1];
+        return al;
+      }
+      
+      let curr = el;
+      for (let depth = 0; depth < 5; depth++) {
+        if (!curr) break;
+        const parent = curr.parentElement;
+        if (parent) {
+          const text = parent.innerText || parent.textContent || '';
+          const m = text.match(/[\w\s-_\(\)]+\.(pdf|docx|doc|zip|xlsx|xls|pptx|ppt|txt|csv|py|json|sh|js|html|css|md)/i);
+          if (m) return m[0];
+        }
+        curr = parent;
+      }
+      return '';
+    }
+
+    function captureDownloadUrl(url, filename = '', el = null) {
       if (!url) return;
       try {
         url = new URL(url, window.location.href).href;
       } catch(_) {}
+      
+      if (!filename && el) {
+        filename = findSurroundingFilename(el);
+      }
       
       console.log('[CEP] Gemini: Intercepted download URL in hook:', url, 'filename:', filename);
       
@@ -292,7 +322,7 @@
       console.log('[CEP] Gemini debug: HTMLAnchorElement.prototype.click called, href:', href);
       if (href && (href.includes('usercontent.google.com') || href.includes('contribution.usercontent.google.com') || href.includes('drive.google.com/viewer') || href.includes('docs.google.com/viewer'))) {
         const filename = this.download || this.innerText || this.textContent || '';
-        captureDownloadUrl(href, filename.trim());
+        captureDownloadUrl(href, filename.trim(), this);
         return; // block the actual download/navigation
       }
       return _origAnchorClick.apply(this, arguments);
@@ -303,7 +333,7 @@
     window.open = function(url, ...args) {
       console.log('[CEP] Gemini debug: window.open called, url:', url);
       if (url && typeof url === 'string' && (url.includes('usercontent.google.com') || url.includes('contribution.usercontent.google.com') || url.includes('drive.google.com/viewer') || url.includes('docs.google.com/viewer'))) {
-        captureDownloadUrl(url);
+        captureDownloadUrl(url, '', null);
         return null; // block opening new window
       }
       return _origWindowOpen.apply(this, arguments);
@@ -315,7 +345,7 @@
       window.location.assign = function(url) {
         console.log('[CEP] Gemini debug: location.assign called, url:', url);
         if (url && typeof url === 'string' && (url.includes('usercontent.google.com') || url.includes('contribution.usercontent.google.com') || url.includes('drive.google.com/viewer') || url.includes('docs.google.com/viewer'))) {
-          captureDownloadUrl(url);
+          captureDownloadUrl(url, '', null);
           return; // block navigation
         }
         return _origAssign.apply(this, arguments);
@@ -326,7 +356,7 @@
       window.location.replace = function(url) {
         console.log('[CEP] Gemini debug: location.replace called, url:', url);
         if (url && typeof url === 'string' && (url.includes('usercontent.google.com') || url.includes('contribution.usercontent.google.com') || url.includes('drive.google.com/viewer') || url.includes('docs.google.com/viewer'))) {
-          captureDownloadUrl(url);
+          captureDownloadUrl(url, '', null);
           return; // block navigation
         }
         return _origReplace.apply(this, arguments);
@@ -342,7 +372,7 @@
           const href = target.href || target.getAttribute('href') || '';
           if (href && (href.includes('usercontent.google.com') || href.includes('contribution.usercontent.google.com') || href.includes('drive.google.com/viewer') || href.includes('docs.google.com/viewer'))) {
             const filename = target.download || target.innerText || target.textContent || '';
-            captureDownloadUrl(href, filename.trim());
+            captureDownloadUrl(href, filename.trim(), target);
             e.preventDefault();
             e.stopPropagation();
             return;
