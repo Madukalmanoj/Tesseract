@@ -2,6 +2,7 @@
 (function() {
   if (window.__cep) return;
   const IS_CLAUDE = window.location.hostname.includes('claude.ai');
+  const IS_GEMINI = window.location.hostname.includes('gemini.google.com');
 
   window.__cep = {
     files: {},      // lcName → {dataUrl,mimeType,filename,url}
@@ -14,7 +15,8 @@
     authHeader: null,
     oaiHeaders: {},
     claudeHeaders: {},
-    lastConvId: null
+    lastConvId: null,
+    interceptedDownloads: []
   };
 
   // Hook setRequestHeader to capture Authorization and OAI headers in XHR
@@ -123,6 +125,231 @@
     window.dispatchEvent(new CustomEvent('__cepStored', {detail:{name,mime,url}}));
   }
 
+  // ── Gemini: Capture files via prototype hooks ───────────────────────────────
+  // Gemini's file picker may use showOpenFilePicker(), shadow DOM inputs, or other
+  // mechanisms that DOM event listeners can't intercept. Instead, hook the
+  // FileReader and Blob prototypes to catch ANY file being read by Gemini's code.
+  if (IS_GEMINI) {
+    const _geminiCapturedFiles = new Set(); // prevent duplicate captures
+    
+    function geminiCaptureFile(file, source) {
+      if (!file || !(file instanceof File)) return;
+      if (!file.name || file.size < 1) return;
+      // Skip images — handled by image extraction
+      if (file.type && file.type.startsWith('image/')) return;
+      // Skip tiny files (likely metadata)
+      if (file.size < 50) return;
+      // Deduplicate by name+size
+      const key = file.name + '|' + file.size;
+      if (_geminiCapturedFiles.has(key)) return;
+      _geminiCapturedFiles.add(key);
+      
+      console.log('[CEP] Gemini prototype hook (' + source + '): detected file:', file.name, file.type, file.size, 'bytes');
+      
+      // Queue the pending filename — the legacy blob interceptor will use this
+      // to name the blob correctly when it catches the upload
+      // (using a queue to handle multiple files uploaded at once)
+      if (!window.__cep._geminiPendingNames) window.__cep._geminiPendingNames = [];
+      window.__cep._geminiPendingNames.push({
+        name: file.name,
+        type: file.type || 'application/octet-stream',
+        size: file.size,
+        time: Date.now()
+      });
+      
+      // Also try to read directly (may fail if File is consumed, but worth trying)
+      try {
+        const reader = new FileReader();
+        reader.__cepInternal = true;
+        reader.onload = function() {
+          if (reader.result) {
+            save(file.name, reader.result, file.type || 'application/octet-stream', 'gemini-' + source);
+            console.log('[CEP] Gemini: direct FileReader capture succeeded for:', file.name);
+          }
+        };
+        reader.onerror = function() {
+          console.log('[CEP] Gemini: direct FileReader failed for:', file.name, '— relying on blob interceptor');
+        };
+        _origReadAsDataURL.call(reader, file);
+      } catch(e) {
+        console.log('[CEP] Gemini: FileReader exception for:', file.name, e.message);
+      }
+    }
+    
+    // 1. Hook FileReader.readAsArrayBuffer — Gemini likely reads files as ArrayBuffer
+    const _origReadAsArrayBuffer = FileReader.prototype.readAsArrayBuffer;
+    FileReader.prototype.readAsArrayBuffer = function(blob) {
+      if (!this.__cepInternal && blob instanceof File) {
+        geminiCaptureFile(blob, 'readAsArrayBuffer');
+      }
+      return _origReadAsArrayBuffer.call(this, blob);
+    };
+    
+    // 2. Hook FileReader.readAsDataURL
+    const _origReadAsDataURL = FileReader.prototype.readAsDataURL;
+    FileReader.prototype.readAsDataURL = function(blob) {
+      if (!this.__cepInternal && blob instanceof File) {
+        geminiCaptureFile(blob, 'readAsDataURL');
+      }
+      return _origReadAsDataURL.call(this, blob);
+    };
+    
+    // 3. Hook Blob.arrayBuffer() — modern alternative to FileReader
+    const _origBlobArrayBuffer = Blob.prototype.arrayBuffer;
+    if (_origBlobArrayBuffer) {
+      Blob.prototype.arrayBuffer = function() {
+        if (this instanceof File && !this.__cepInternal) {
+          geminiCaptureFile(this, 'blobArrayBuffer');
+        }
+        return _origBlobArrayBuffer.call(this);
+      };
+    }
+    
+    // 4. Hook Blob.text() — another modern API
+    const _origBlobText = Blob.prototype.text;
+    if (_origBlobText) {
+      Blob.prototype.text = function() {
+        if (this instanceof File && !this.__cepInternal) {
+          geminiCaptureFile(this, 'blobText');
+        }
+        return _origBlobText.call(this);
+      };
+    }
+    
+    // 5. Fallback: DOM event listeners (may work for some file picker implementations)
+    document.addEventListener('change', function(e) {
+      if (e.target && e.target.type === 'file' && e.target.files) {
+        for (const file of e.target.files) geminiCaptureFile(file, 'inputChange');
+      }
+    }, true);
+    document.addEventListener('drop', function(e) {
+      if (e.dataTransfer && e.dataTransfer.files) {
+        for (const file of e.dataTransfer.files) geminiCaptureFile(file, 'drop');
+      }
+    }, true);
+
+    // ── Clear store on Gemini SPA navigation (new chat) ──
+    let lastGeminiPath = window.location.pathname;
+    
+    function getGeminiConvId(path) {
+      const m = path.match(/\/app\/([a-zA-Z0-9_-]+)/);
+      return m ? m[1] : '__new__';
+    }
+    
+    function onGeminiNavigate() {
+      const newPath = window.location.pathname;
+      if (newPath === lastGeminiPath) return;
+      const oldConv = getGeminiConvId(lastGeminiPath);
+      const newConv = getGeminiConvId(newPath);
+      lastGeminiPath = newPath;
+      
+      // Don't clear when going FROM new chat → conversation
+      // (normal flow: user uploads file on /app, sends message, URL becomes /app/CONV_ID)
+      if (oldConv === '__new__') {
+        console.log('[CEP] Gemini: new chat became conversation', newConv, '— keeping store');
+        return;
+      }
+      
+      if (oldConv !== newConv) {
+        console.log('[CEP] Gemini: switched conversation — clearing store');
+        window.__cep.files = {};
+        window.__cep.urlMap = {};
+        window.__cep.idMap = {};
+        window.__cep.lastUploadedFile = null;
+        window.__cep._geminiPendingNames = [];
+        window.__cep.interceptedDownloads = [];
+        _geminiCapturedFiles.clear();
+      }
+    }
+    
+    const _pushState = history.pushState.bind(history);
+    const _replaceState = history.replaceState.bind(history);
+    history.pushState = function(...args) { const r = _pushState(...args); onGeminiNavigate(); return r; };
+    history.replaceState = function(...args) { const r = _replaceState(...args); onGeminiNavigate(); return r; };
+    window.addEventListener('popstate', onGeminiNavigate);
+
+    // ── Gemini: Intercept and capture download URLs ──
+    function captureDownloadUrl(url, filename = '') {
+      if (!url) return;
+      try {
+        url = new URL(url, window.location.href).href;
+      } catch(_) {}
+      
+      console.log('[CEP] Gemini: Intercepted download URL:', url, 'filename:', filename);
+      
+      if (!window.__cep.interceptedDownloads) window.__cep.interceptedDownloads = [];
+      window.__cep.interceptedDownloads.push({
+        url: url,
+        filename: filename,
+        time: Date.now()
+      });
+    }
+
+    // 1. Hook HTMLAnchorElement.prototype.click
+    const _origAnchorClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function() {
+      const href = this.href || this.getAttribute('href');
+      if (href && (href.includes('usercontent.google.com') || href.includes('contribution.usercontent.google.com') || href.includes('drive.google.com/viewer') || href.includes('docs.google.com/viewer'))) {
+        const filename = this.download || this.innerText || this.textContent || '';
+        captureDownloadUrl(href, filename.trim());
+        return; // block the actual download/navigation
+      }
+      return _origAnchorClick.apply(this, arguments);
+    };
+
+    // 2. Hook window.open
+    const _origWindowOpen = window.open;
+    window.open = function(url, ...args) {
+      if (url && typeof url === 'string' && (url.includes('usercontent.google.com') || url.includes('contribution.usercontent.google.com') || url.includes('drive.google.com/viewer') || url.includes('docs.google.com/viewer'))) {
+        captureDownloadUrl(url);
+        return null; // block opening new window
+      }
+      return _origWindowOpen.apply(this, arguments);
+    };
+
+    // 3. Hook location.assign and replace
+    const _origAssign = window.location.assign;
+    if (_origAssign) {
+      window.location.assign = function(url) {
+        if (url && typeof url === 'string' && (url.includes('usercontent.google.com') || url.includes('contribution.usercontent.google.com') || url.includes('drive.google.com/viewer') || url.includes('docs.google.com/viewer'))) {
+          captureDownloadUrl(url);
+          return; // block navigation
+        }
+        return _origAssign.apply(this, arguments);
+      };
+    }
+    const _origReplace = window.location.replace;
+    if (_origReplace) {
+      window.location.replace = function(url) {
+        if (url && typeof url === 'string' && (url.includes('usercontent.google.com') || url.includes('contribution.usercontent.google.com') || url.includes('drive.google.com/viewer') || url.includes('docs.google.com/viewer'))) {
+          captureDownloadUrl(url);
+          return; // block navigation
+        }
+        return _origReplace.apply(this, arguments);
+      };
+    }
+
+    // 4. Intercept clicks on links that are not handled programmatically
+    window.addEventListener('click', function(e) {
+      let target = e.target;
+      while (target) {
+        if (target.tagName === 'A') {
+          const href = target.href || target.getAttribute('href') || '';
+          if (href && (href.includes('usercontent.google.com') || href.includes('contribution.usercontent.google.com') || href.includes('drive.google.com/viewer') || href.includes('docs.google.com/viewer'))) {
+            const filename = target.download || target.innerText || target.textContent || '';
+            captureDownloadUrl(href, filename.trim());
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+        }
+        target = target.parentElement;
+      }
+    }, true);
+    
+    console.log('[CEP] Gemini file prototype hooks installed');
+  }
+
   async function inspectRequestBodyLegacy(body, url) {
     if (!body) return;
     try {
@@ -144,10 +371,34 @@
         save(name, dataUrl, mime, url);
       } else if (body instanceof Blob) {
         let name = getName(url);
-        if (!name) {
-          name = 'upload_' + Date.now() + '.' + mext(body.type);
+        let mime = body.type;
+        
+        // Gemini: find best matching pending filename from the queue
+        if (IS_GEMINI && window.__cep._geminiPendingNames && window.__cep._geminiPendingNames.length > 0) {
+          let bestIdx = -1, bestSizeDiff = Infinity;
+          for (let i = 0; i < window.__cep._geminiPendingNames.length; i++) {
+            const p = window.__cep._geminiPendingNames[i];
+            const elapsed = Date.now() - p.time;
+            if (elapsed > 30000) continue; // expired
+            const sizeDiff = Math.abs(body.size - p.size);
+            if (sizeDiff < 500 && sizeDiff < bestSizeDiff) {
+              bestIdx = i;
+              bestSizeDiff = sizeDiff;
+            }
+          }
+          if (bestIdx >= 0) {
+            const pending = window.__cep._geminiPendingNames.splice(bestIdx, 1)[0];
+            name = pending.name;
+            mime = pending.type || mime;
+            console.log('[CEP] Gemini: matched blob to pending name:', name, '(size diff:', bestSizeDiff, ')');
+          }
+          // Clean up expired entries
+          window.__cep._geminiPendingNames = window.__cep._geminiPendingNames.filter(p => Date.now() - p.time < 30000);
         }
-        const mime = body.type;
+        
+        if (!name) {
+          name = 'upload_' + Date.now() + '.' + mext(mime);
+        }
         const dataUrl = await toDataUrl(body, mime);
         console.log("[CEP] Intercepted Blob upload request body (Legacy):", name, mime);
         save(name, dataUrl, mime, url);
@@ -426,6 +677,76 @@
     processNode(obj);
   }
 
+  // ── Gemini-specific JSON scanner ──────────────────────────────────────────
+  // Scans Gemini API responses for file metadata (file names, MIME types, URIs)
+  // and pairs them with intercepted upload blobs
+  function scanGeminiJson(obj, url) {
+    if (!obj || typeof obj !== 'object') return;
+    
+    function processGeminiNode(node) {
+      if (!node || typeof node !== 'object') return;
+      if (Array.isArray(node)) {
+        for (const item of node) processGeminiNode(item);
+        return;
+      }
+      
+      // Look for file metadata objects with name + mime_type
+      const fileName = node.file_name || node.fileName || node.filename || 
+                       node.display_name || node.displayName;
+      const mimeType = node.mime_type || node.mimeType || node.content_type || node.contentType;
+      const fileUri = node.file_uri || node.fileUri || node.uri || node.url;
+      const fileId = node.name || node.id || node.file_id || node.fileId; // Gemini uses "name" field like "files/abc123"
+      
+      if (fileName && typeof fileName === 'string' && fileName.includes('.')) {
+        const clean = fileName.trim().replace(/^\d{10,13}_/, '');
+        if (clean.length < 255 && clean.length > 1) {
+          console.log('[CEP] Gemini JSON: Found file metadata:', clean, 'mime:', mimeType, 'uri:', fileUri);
+          
+          // Map file ID to name
+          if (fileId && typeof fileId === 'string') {
+            window.__cep.idMap[fileId] = clean;
+            if (fileUri) {
+              window.__cep.urlMap[fileUri] = clean;
+              window.__cep.downloadUrlMap[fileId] = fileUri;
+            }
+          }
+          
+          // Try to pair with the last uploaded file blob
+          if (window.__cep.lastUploadedFile) {
+            const elapsed = Date.now() - window.__cep.lastUploadedFile.time;
+            if (elapsed < 30000) { // 30 second window for Gemini (can be slow)
+              const { dataUrl, mime } = window.__cep.lastUploadedFile;
+              save(clean, dataUrl, mime || mimeType || 'application/octet-stream', fileUri || url);
+              console.log('[CEP] Gemini: Paired uploaded blob with metadata:', clean);
+              window.__cep.lastUploadedFile = null; // consumed
+            }
+          }
+        }
+      }
+      
+      // Also look for inline_data with mime_type (base64 embedded files)
+      if (node.inline_data && node.inline_data.mime_type && node.inline_data.data) {
+        const mime = node.inline_data.mime_type;
+        if (!mime.startsWith('image/')) { // images are handled separately
+          const ext = mext(mime);
+          const name = 'gemini_file_' + Date.now() + '.' + ext;
+          const dataUrl = 'data:' + mime + ';base64,' + node.inline_data.data;
+          save(name, dataUrl, mime, url);
+          console.log('[CEP] Gemini: Found inline file data:', name, mime);
+        }
+      }
+      
+      // Recurse into child objects
+      for (const k in node) {
+        if (Object.prototype.hasOwnProperty.call(node, k)) {
+          processGeminiNode(node[k]);
+        }
+      }
+    }
+    
+    processGeminiNode(obj);
+  }
+
   function getName(url) {
     if (!url) return null;
     // 1. Exact match in urlMap
@@ -487,7 +808,11 @@
     if (u.includes('/backend-api/files/')) return false;
 
     // Ignore JSON/HTML response content-types for API endpoints
-    if ((c.includes('json') || c.includes('html')) && (u.includes('/api/organizations/') || u.includes('/backend-api/'))) {
+    if ((c.includes('json') || c.includes('html')) && (
+      u.includes('/api/organizations/') || u.includes('/backend-api/') ||
+      u.includes('generativelanguage.googleapis.com') || u.includes('gemini.google.com') ||
+      u.includes('drive.google.com')
+    )) {
       return false;
     }
 
@@ -496,10 +821,20 @@
       return false;
     }
 
+    // Skip Gemini document viewer page renders (these render pages as images, not original files)
+    if (u.includes('drive.google.com/viewer/')) return false;
+
     const fileUrl = u.includes('oaiusercontent') || u.includes('estuary') ||
       u.includes('/files/') || u.includes('file-service') ||
       u.includes('blob.core.windows') || u.includes('storage.googleapis') ||
-      u.includes('/api/organizations/');
+      u.includes('/api/organizations/') ||
+      // Gemini-specific upload/storage endpoints (gated to avoid affecting ChatGPT)
+      (IS_GEMINI && (
+        u.includes('generativelanguage.googleapis.com') ||
+        u.includes('upload.googleapis.com') ||
+        u.includes('content-push.googleapis.com') ||
+        u.includes('drivedl.googleapis.com')
+      ));
     const fileMime = c.includes('pdf')||c.includes('zip')||c.includes('msword')||
       c.includes('officedocument')||c.includes('octet-stream')||
       c.includes('image/png')||c.includes('image/jpeg')||
@@ -758,8 +1093,70 @@
 
       return resp;
     } else {
-      // ── LEGACY CHATGPT FETCH HOOK ──
+      // ── LEGACY CHATGPT / GEMINI / GROK FETCH HOOK ──
       // Inspect request body if present (for capturing uploads)
+      if (IS_GEMINI) {
+        // Gemini: comprehensive upload body capture (handles all body types)
+        (async () => {
+          try {
+            let body = opts.body;
+            let contentType = '';
+            
+            // Extract Content-Type from headers
+            if (opts.headers) {
+              if (opts.headers instanceof Headers) {
+                contentType = opts.headers.get('Content-Type') || opts.headers.get('content-type') || '';
+              } else if (typeof opts.headers === 'object') {
+                for (const [k, v] of Object.entries(opts.headers)) {
+                  if (k.toLowerCase() === 'content-type') { contentType = v; break; }
+                }
+              }
+            }
+            
+            // Also try to get body from Request object
+            if (!body && req instanceof Request) {
+              try {
+                contentType = contentType || req.headers.get('content-type') || '';
+                body = await req.clone().blob();
+              } catch(_) {}
+            }
+            
+            if (!body) return;
+            
+            // Handle different body types
+            let dataUrl = null, mime = '', fileName = '';
+            
+            if (body instanceof File) {
+              fileName = body.name;
+              mime = body.type;
+              dataUrl = await toDataUrl(body, mime);
+            } else if (body instanceof FormData) {
+              for (const [key, val] of body.entries()) {
+                if (val instanceof File || (val instanceof Blob && val.size > 100)) {
+                  fileName = val.name || ('upload_' + Date.now() + '.' + mext(val.type));
+                  mime = val.type;
+                  dataUrl = await toDataUrl(val, mime);
+                  break;
+                }
+              }
+            } else if (body instanceof Blob && body.size > 100) {
+              fileName = getName(url) || ('upload_' + Date.now() + '.' + mext(body.type || contentType));
+              mime = body.type || contentType;
+              dataUrl = await toDataUrl(body, mime);
+            } else if (body instanceof ArrayBuffer && body.byteLength > 100) {
+              mime = contentType || 'application/octet-stream';
+              fileName = getName(url) || ('upload_' + Date.now() + '.' + mext(mime));
+              dataUrl = await toDataUrl(body, mime);
+            }
+            
+            if (dataUrl && dataUrl.length > 100) {
+              save(fileName, dataUrl, mime, url);
+              window.__cep.lastUploadedFile = { dataUrl, mime, time: Date.now() };
+              console.log('[CEP] Gemini: Captured upload:', fileName, 'mime:', mime, 'size:', dataUrl.length);
+            }
+          } catch(_) {}
+        })();
+      }
       if (opts.body) {
         inspectRequestBodyLegacy(opts.body, url).catch(_=>{});
       }
@@ -819,6 +1216,26 @@
       try {
         const ct = resp.headers.get('content-type') || '';
         
+        // ── Gemini-specific JSON interception ──
+        if (IS_GEMINI && ct.includes('application/json')) {
+          resp.clone().text().then(text => {
+            try {
+              // Gemini may return multiple JSON objects or arrays
+              const data = JSON.parse(text);
+              scanGeminiJson(data, url);
+            } catch(_) {
+              // Try parsing as JSONL (newline-delimited JSON)
+              for (const line of text.split('\n')) {
+                if (!line.trim()) continue;
+                try {
+                  const d = JSON.parse(line.trim());
+                  scanGeminiJson(d, url);
+                } catch(_) {}
+              }
+            }
+          }).catch(_=>{});
+        }
+
         // 1. Intercept conversation and messages JSON payloads to map file IDs to filenames
         if (ct.includes('application/json') && (url.includes('/backend-api/') || url.includes('/api/organizations/'))) {
           resp.clone().json().then(d => {
@@ -955,6 +1372,14 @@
             save(name, dataUrl, ct, url);
           }).catch(_=>{});
         } else {
+          // Gemini XHR JSON scanning
+          if (IS_GEMINI && ct.includes('application/json')) {
+            try {
+              const d = JSON.parse(this.responseText);
+              scanGeminiJson(d, url);
+            } catch(_) {}
+          }
+
           // Intercept ChatGPT /download metadata via XHR
           if (/\/backend-api\/files\/[^/?]+\/download/.test(url)) {
             try {
@@ -1351,7 +1776,8 @@
           orgId: window.__cep.orgId,
           authHeader: window.__cep.authHeader,
           idMap: window.__cep.idMap,
-          downloadUrlMap: window.__cep.downloadUrlMap || {}
+          downloadUrlMap: window.__cep.downloadUrlMap || {},
+          interceptedDownloads: window.__cep.interceptedDownloads || []
         }
       }));
     }

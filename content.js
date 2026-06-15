@@ -841,7 +841,18 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
       '[class*="file-chip" i]', '[class*="attachment" i]', '[class*="file-preview" i]',
       '[class*="document-chip" i]', '[class*="upload-file" i]', 'a[href*="blob:"]', 'a[download]',
       'button[aria-label*="file" i]', 'button[aria-label*="attachment" i]',
-      '[class*="file" i]', '[class*="doc" i]', 'div[role="button"]'
+      '[class*="file" i]', '[class*="doc" i]', 'div[role="button"]',
+      // Gemini-specific selectors
+      ...(PLAT === 'gemini' ? [
+        '[class*="upload-chip" i]', '[class*="uploaded" i]', '[class*="file-name" i]',
+        '[class*="chip" i]', '[data-file-name]', '[data-filename]',
+        'uploader-thumbnail', 'file-thumbnail', 'attachment-chip',
+        '[class*="attachment-name" i]', '[class*="resource" i]',
+        '[aria-label*=".pdf" i]', '[aria-label*=".docx" i]', '[aria-label*=".zip" i]',
+        '[aria-label*=".xlsx" i]', '[aria-label*=".pptx" i]', '[aria-label*=".json" i]',
+        '[aria-label*=".md" i]', '[aria-label*=".csv" i]', '[aria-label*=".txt" i]',
+        '[aria-label*=".py" i]', '[aria-label*=".js" i]', '[aria-label*=".html" i]'
+      ] : [])
     ];
     // Broad fallback selectors (low confidence — only use if nothing found above)
     const broadSels = ['span', 'p', 'a'];
@@ -956,9 +967,125 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
       });
     }
 
-    // Step 3: Remaining unmatched chips are name-only
+    // Step 3: Remaining unmatched chips — try download URL (Gemini), else name-only
     for (let idx = pairCount; idx < unmatchedChips.length; idx++) {
       const chipItem = unmatchedChips[idx];
+      
+      // Gemini: try to find and fetch the download URL for this file
+      if (PLAT === 'gemini') {
+        let downloadUrl = null;
+        const chipEl = chipItem.chip;
+        
+        // Strategy 1: Look for download links/anchors near the chip
+        if (chipEl) {
+          // Check the chip itself and its ancestors for a download link
+          const searchRoot = chipEl.closest('[class*="message"]') || chipEl.closest('[class*="turn"]') || chipEl.parentElement?.parentElement || chipEl;
+          const links = searchRoot.querySelectorAll('a[href*="usercontent.google.com"], a[href*="download"], a[download]');
+          for (const link of links) {
+            const href = link.href || link.getAttribute('href') || '';
+            if (href.includes('usercontent.google.com/download') || href.includes('contribution.usercontent.google.com')) {
+              downloadUrl = href;
+              break;
+            }
+          }
+        }
+        
+        // Strategy 2: Scan the full page for download URLs matching this conversation
+        if (!downloadUrl) {
+          const allLinks = document.querySelectorAll('a[href*="usercontent.google.com/download"]');
+          for (const link of allLinks) {
+            downloadUrl = link.href || link.getAttribute('href');
+            if (downloadUrl) break;
+          }
+        }
+        
+        // Strategy 3: Check for data-attributes or onclick handlers with download URLs
+        if (!downloadUrl && chipEl) {
+          const walkEl = chipEl.closest('[data-download-url]') || chipEl.querySelector('[data-download-url]');
+          if (walkEl) {
+            downloadUrl = walkEl.getAttribute('data-download-url');
+          }
+          // Check all ancestor/sibling attributes for download URLs
+          if (!downloadUrl) {
+            const html = (chipEl.closest('[class*="response"]') || chipEl.parentElement || chipEl).innerHTML || '';
+            const urlMatch = html.match(/https:\/\/contribution\.usercontent\.google\.com\/download[^"'\s]*/);
+            if (urlMatch) downloadUrl = urlMatch[0];
+          }
+        }
+
+        // Strategy 4: Programmatic click download option
+        if (!downloadUrl && chipEl) {
+          // Find all download buttons in the turn
+          const btns = querySelectorAllShadow('[aria-label*="Download" i], [title*="Download" i], button[class*="download" i], a[class*="download" i], [class*="download" i]', turn);
+          let downloadBtn = null;
+          if (btns.length === 1) {
+            downloadBtn = btns[0];
+          } else if (btns.length > 1) {
+            // Find the button closest to our chipEl
+            let minDistance = Infinity;
+            const rect1 = chipEl.getBoundingClientRect();
+            for (const btn of btns) {
+              const rect2 = btn.getBoundingClientRect();
+              const dist = Math.hypot(rect1.left - rect2.left, rect1.top - rect2.top);
+              if (dist < minDistance) {
+                minDistance = dist;
+                downloadBtn = btn;
+              }
+            }
+          }
+
+          if (downloadBtn) {
+            console.log('[CEP] Gemini: Found download button for chip:', chipItem.name, '— programmatically clicking...');
+            try {
+              // Retrieve current store to get the count of intercepted downloads before clicking
+              let pageStore = await getStore();
+              const beforeCount = (pageStore.interceptedDownloads || []).length;
+              
+              // Click it!
+              downloadBtn.click();
+              
+              // Wait up to 1 second for interceptor to catch the URL
+              for (let wait = 0; wait < 10; wait++) {
+                await new Promise(ok => setTimeout(ok, 100));
+                pageStore = await getStore();
+                const afterCount = (pageStore.interceptedDownloads || []).length;
+                if (afterCount > beforeCount) {
+                  const newDownload = pageStore.interceptedDownloads[pageStore.interceptedDownloads.length - 1];
+                  downloadUrl = newDownload.url;
+                  console.log('[CEP] Gemini: Intercepted download URL via click:', downloadUrl);
+                  break;
+                }
+              }
+            } catch (err) {
+              console.warn('[CEP] Gemini: Failed during programmatic download click:', err);
+            }
+          }
+        }
+        
+        // If we found a download URL, fetch via background script
+        if (downloadUrl) {
+          console.log('[CEP] Gemini: fetching old file via download URL:', chipItem.name, downloadUrl.substring(0, 80) + '...');
+          try {
+            const r = await bg('fetchAsBase64', { url: downloadUrl });
+            if (!r.error && r.dataUrl) {
+              add({
+                name: chipItem.name,
+                dataUrl: r.dataUrl,
+                mimeType: r.mimeType || 'application/octet-stream',
+                source: 'gemini-download',
+                note: '✓ data'
+              });
+              console.log('[CEP] Gemini: fetched old file successfully:', chipItem.name);
+              continue; // skip the name-only fallback
+            } else {
+              console.log('[CEP] Gemini: download fetch failed:', r.error);
+            }
+          } catch (e) {
+            console.log('[CEP] Gemini: download fetch error:', e.message);
+          }
+        }
+      }
+      
       add({
         name: chipItem.name,
         source: PLAT + '-chip',
@@ -1294,6 +1421,41 @@ async function extractAll() {
     if (base64.startsWith('UklGR') && base64.includes('WEBP')) return 'image/webp';
     return null;
   }
+  // ── Gemini file store fallback ─────────────────────────────────────────────
+  // If Gemini per-turn extraction found no files but the store has properly-named ones,
+  // add them directly from the store
+  if (PLAT === 'gemini' && result.allFiles.length === 0) {
+    const seenFileNames = new Set();
+    const genericNames = new Set(['file', 'file.txt', 'file.bin', 'upload', 'blob']);
+    for (const [k, v] of Object.entries(store || {})) {
+      if (consumedStore.has(v)) continue;
+      if (!v.filename || !v.dataUrl) continue;
+      const fn = v.filename.toLowerCase().trim();
+      if (genericNames.has(fn)) continue;
+      // Must have a real file extension
+      if (!fn.includes('.')) continue;
+      const ext = fn.split('.').pop();
+      const realExts = ['pdf', 'docx', 'doc', 'zip', 'xlsx', 'xls', 'pptx', 'ppt', 'txt', 'csv', 'py', 'json', 'sh', 'js', 'html', 'css', 'md', 'xml', 'yaml', 'yml', 'bin', 'tar', 'gz', 'rar', '7z', 'exe', 'dmg', 'iso', 'sql', 'log', 'cfg', 'ini', 'env', 'ts', 'tsx', 'jsx', 'java', 'c', 'cpp', 'h', 'rb', 'go', 'rs', 'swift', 'kt'];
+      if (!realExts.includes(ext)) continue;
+      // Skip image extensions (handled by image extraction)
+      if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext)) continue;
+      if (seenFileNames.has(fn)) continue;
+      seenFileNames.add(fn);
+      
+      console.log('[CEP] Gemini file store fallback: adding', v.filename);
+      result.allFiles.push({
+        name: v.filename,
+        dataUrl: v.dataUrl,
+        mimeType: v.mimeType,
+        source: 'gemini-store-fallback',
+        note: '✓ data'
+      });
+      consumedStore.add(v);
+    }
+    if (result.allFiles.length > 0) {
+      console.log('[CEP] Gemini file store fallback added', result.allFiles.length, 'files');
+    }
+  }
 
   // Add any generic/unconsumed store files that were not matched to any DOM chip
   for (const [k, v] of Object.entries(store || {})) {
@@ -1332,6 +1494,12 @@ async function extractAll() {
     }
 
     if (isImage) {
+      // On Gemini, skip store images if we already extracted images from DOM
+      // Store images are duplicates of what DOM extraction already captured
+      if (PLAT === 'gemini' && result.allImages.length > 0) {
+        console.log('[CEP] Skipping Gemini store image (already have DOM images):', filename);
+        continue;
+      }
       // Add to allImages if not already present
       const srcUrl = v.url || filename;
       result.allImages.push({
@@ -1391,9 +1559,25 @@ async function extractAll() {
   });
 
   // Deduplicate files, preferring versions with dataUrl
+  // Normalize keys: strip (1), (2) etc. suffixes added by save() to avoid overwrites
   const fileMap = new Map();
+  const fileContentSet = new Set(); // content-based dedup
   for (const f of result.allFiles) {
-    const key = f.name.toLowerCase();
+    // Skip generic upload_*.bin entries if we already have named files
+    if (/^upload_\d+\.bin$/i.test(f.name) && fileMap.size > 0) continue;
+    
+    // Normalize key: strip numbered suffixes like (1), (2) before extension
+    let key = f.name.toLowerCase();
+    key = key.replace(/\(\d+\)(?=\.[^.]+$)/, '');  // "file(1).pdf" → "file.pdf"
+    key = key.replace(/\(\d+\)$/, '');              // "file(1)" → "file"
+    
+    // Content-based dedup: skip if identical content already captured
+    if (f.dataUrl && f.dataUrl.length > 100) {
+      const contentKey = f.dataUrl.substring(0, 200);
+      if (fileContentSet.has(contentKey)) continue;
+      fileContentSet.add(contentKey);
+    }
+    
     const existing = fileMap.get(key);
     if (!existing || (!existing.dataUrl && f.dataUrl)) {
       fileMap.set(key, f);
