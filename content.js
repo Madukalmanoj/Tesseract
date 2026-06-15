@@ -504,7 +504,11 @@ function resolveImageSrc(img) {
 // ── Extract images from a turn (bg proxy for CORS) ──────────────────────────
 async function extractImages(turn, idMap = {}) {
   const imgs = [];
-  const allImgs = turn.querySelectorAll('img');
+  let allImgs = turn.querySelectorAll('img');
+  // For Gemini, also check shadowRoot children
+  if (PLAT === 'gemini' && allImgs.length === 0) {
+    allImgs = querySelectorAllShadow('img', turn);
+  }
   console.log('[CEP] Found', allImgs.length, 'total images in turn');
   for (const img of allImgs) {
     const src = resolveImageSrc(img);
@@ -533,14 +537,12 @@ async function extractImages(turn, idMap = {}) {
     console.log('[CEP] Image elements attributes:', JSON.stringify(attrs));
     console.log('[CEP] Resolved Image src:', src);
 
-    if (!src||src.startsWith('data:image/svg')) { console.log('[CEP] Skipped: empty or svg'); continue; }
-    if (img.getAttribute('aria-hidden')==='true') { console.log('[CEP] Skipped: aria-hidden'); continue; }
-
     // Skip avatar and profile picture elements (bypass for known uploaded/preview chat images)
     const isUploadedImg = img.getAttribute('data-test-id') === 'uploaded-img' || 
                           (img.className && typeof img.className === 'string' && img.className.includes('preview-image')) ||
                           (sl.includes('twimg.com') && !sl.includes('profile_images')) ||
                           (sl.includes('x.com') && sl.includes('/media/')) ||
+                          (PLAT === 'gemini' && (sl.includes('googleusercontent') || sl.includes('google.com')) && !sl.includes('googleusercontent.com/a/') && !sl.includes('googleusercontent.com/a-/')) ||
                           (PLAT === 'grok' && (
                             sl.includes('x.ai') ||
                             sl.includes('twimg.com') ||
@@ -550,7 +552,10 @@ async function extractImages(turn, idMap = {}) {
                           // Additional generic upload URL checks:
                           sl.includes('blob:') || sl.includes('/files/') || sl.includes('oaiusercontent') ||
                           sl.includes('upload') || sl.includes('/api/organizations/') || sl.includes('fileuploads') ||
-                          sl.includes('googleusercontent');
+                          (sl.includes('googleusercontent') && !sl.includes('googleusercontent.com/a/') && !sl.includes('googleusercontent.com/a-/'));
+
+    if (!src||src.startsWith('data:image/svg')) { console.log('[CEP] Skipped: empty or svg'); continue; }
+    if (img.getAttribute('aria-hidden')==='true' && !isUploadedImg) { console.log('[CEP] Skipped: aria-hidden'); continue; }
 
     // Skip UI elements only if they are not known uploaded/chat images
     if (!isUploadedImg && isInsideUI(img)) { console.log('[CEP] Skipped: inside UI'); continue; }
@@ -846,7 +851,7 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
 
     // First pass: try specific selectors
     for (const sel of specificSels) {
-      for (const chip of turn.querySelectorAll(sel)) {
+      for (const chip of querySelectorAllShadow(sel, turn)) {
         if (isInsideUI(chip)) continue;
         const name = chipText(chip);
         if (!name) continue;
@@ -867,7 +872,7 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
     // Second pass: only try broad selectors if no specific chips found, with strict filename check
     if (!foundSpecific) {
       for (const sel of broadSels) {
-        for (const chip of turn.querySelectorAll(sel)) {
+        for (const chip of querySelectorAllShadow(sel, turn)) {
           if (isInsideUI(chip)) continue;
           const name = chipText(chip);
           if (!name) continue;
@@ -1074,7 +1079,6 @@ async function expandCollapsedSections() {
       clicked.add(el);
       try {
         el.click();
-        await new Promise(r => setTimeout(r, 200));
       } catch(_) {}
     }
   }
@@ -1129,16 +1133,25 @@ async function extractAll() {
     const images= await extractImages(turn, idMap);
     const files = await extractFiles(turn, store, orgId, consumedStore);
 
-    // Deduplicate images by src URL across turns (Claude only — ChatGPT uses unique query params per image)
-    let finalImages = images;
-    if (PLAT === 'claude') {
-      finalImages = images.filter(img => {
-        const key = img.src.replace(/\?.*$/, ''); // strip query params for dedup
-        if (seenImageSrcs.has(key)) return false;
-        seenImageSrcs.add(key);
-        return true;
-      });
-    }
+    // Deduplicate images across turns
+    // ChatGPT: use full URL (different query params = different images)
+    // Grok: normalize asset URLs (strip /content, /preview-image suffixes)
+    // Claude/others: strip query params (same image with cache-busting params)
+    const finalImages = images.filter(img => {
+      let key;
+      if (PLAT === 'chatgpt') {
+        key = img.src || img.dataUrl || '';
+      } else {
+        key = (img.src || '').replace(/\?.*$/, '') || img.dataUrl || '';
+        // Grok: normalize asset endpoint suffixes
+        if (PLAT === 'grok' && key.includes('assets.grok.com')) {
+          key = key.replace(/\/(content|preview-image|original-image|original|image|thumb|thumbnail)$/i, '');
+        }
+      }
+      if (!key || seenImageSrcs.has(key)) return false;
+      seenImageSrcs.add(key);
+      return true;
+    });
 
     result.allImages.push(...finalImages);
     result.allFiles.push(...files);
@@ -1147,26 +1160,235 @@ async function extractAll() {
     }
   }
 
+  // ── Gemini full-page image fallback ─────────────────────────────────────────
+  // Gemini's DOM structure often places images outside of turn containers.
+  // If we found zero images from turns, do a full-page scan.
+  if (PLAT === 'gemini' && result.allImages.length === 0) {
+    console.log('[CEP] Gemini: No images found in turns, scanning full page...');
+    const mainArea = document.querySelector('main') || document.body;
+    const pageImgs = mainArea.querySelectorAll('img');
+    console.log('[CEP] Gemini full-page scan found', pageImgs.length, 'img elements');
+    
+    for (const img of pageImgs) {
+      const src = resolveImageSrc(img);
+      if (!src || src.startsWith('data:image/svg')) continue;
+      const sl = src.toLowerCase();
+      
+      // Only grab actual content images (uploaded/generated), not UI chrome
+      const isContent = sl.includes('googleusercontent') || sl.includes('google.com/image') ||
+                        sl.includes('blob:') || sl.includes('/files/') || sl.includes('upload') ||
+                        sl.includes('lh3.') || sl.includes('lh4.') || sl.includes('lh5.') || sl.includes('lh6.') ||
+                        sl.includes('ggpht');
+      if (!isContent) continue;
+      
+      // Skip tiny icons and avatars
+      const nw = img.naturalWidth, nh = img.naturalHeight;
+      if (nw > 0 && nh > 0 && nw < 24 && nh < 24) continue;
+      if (sl.includes('avatar') || sl.includes('profile') || sl.includes('favicon') || sl.includes('icon')) continue;
+      
+      // Skip Google profile/avatar pictures: /a/ path = avatar on googleusercontent
+      if (sl.includes('googleusercontent.com/a/') || sl.includes('googleusercontent.com/a-/')) {
+        console.log('[CEP] Gemini fallback: skipping Google avatar URL:', src.substring(0, 80));
+        continue;
+      }
+      // Skip small displayed images (profile pics are often 28-48px CSS size)
+      const rect = img.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0 && rect.width < 64 && rect.height < 64) {
+        console.log('[CEP] Gemini fallback: skipping small displayed image:', rect.width, 'x', rect.height);
+        continue;
+      }
+      
+      // Skip if already seen
+      if (seenImageSrcs.has(src)) continue;
+      seenImageSrcs.add(src);
+      
+      console.log('[CEP] Gemini fallback: fetching image:', src.substring(0, 120));
+      let r;
+      if (src.startsWith('blob:') || src.startsWith('data:')) {
+        try {
+          const resp = await fetch(src);
+          const blob = await resp.blob();
+          const dataUrl = await new Promise((ok, fail) => {
+            const reader = new FileReader();
+            reader.onload = () => ok(reader.result);
+            reader.onerror = fail;
+            reader.readAsDataURL(blob);
+          });
+          r = { dataUrl, mimeType: blob.type, size: blob.size };
+        } catch(e) {
+          r = { error: e.message };
+        }
+      } else {
+        r = await bg('fetchAsBase64', {url: src});
+      }
+      
+      if (r.error) {
+        console.warn('[CEP] Gemini fallback fetch failed:', src, r.error);
+      } else if (r.size > 200) {
+        console.log('[CEP] Gemini fallback image OK, size:', r.size);
+        result.allImages.push({
+          src, dataUrl: r.dataUrl, mimeType: r.mimeType, size: r.size, alt: img.alt || ''
+        });
+      }
+    }
+    
+    // Also check for images inside shadow roots on the whole page
+    if (result.allImages.length === 0) {
+      console.log('[CEP] Gemini: Still no images, trying deep shadow DOM scan...');
+      const shadowImgs = querySelectorAllShadow('img', mainArea);
+      console.log('[CEP] Gemini shadow scan found', shadowImgs.length, 'images');
+      for (const img of shadowImgs) {
+        const src = resolveImageSrc(img);
+        if (!src || src.startsWith('data:image/svg')) continue;
+        const sl = src.toLowerCase();
+        const isContent = sl.includes('googleusercontent') || sl.includes('google.com/image') ||
+                          sl.includes('blob:') || sl.includes('/files/') || sl.includes('upload') ||
+                          sl.includes('lh3.') || sl.includes('lh4.') || sl.includes('lh5.') || sl.includes('lh6.') ||
+                          sl.includes('ggpht');
+        if (!isContent) continue;
+        const nw = img.naturalWidth, nh = img.naturalHeight;
+        if (nw > 0 && nh > 0 && nw < 24 && nh < 24) continue;
+        if (sl.includes('avatar') || sl.includes('profile') || sl.includes('favicon') || sl.includes('icon')) continue;
+        // Skip Google avatar URLs
+        if (sl.includes('googleusercontent.com/a/') || sl.includes('googleusercontent.com/a-/')) continue;
+        const rect = img.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0 && rect.width < 64 && rect.height < 64) continue;
+        if (seenImageSrcs.has(src)) continue;
+        seenImageSrcs.add(src);
+        
+        let r;
+        if (src.startsWith('blob:') || src.startsWith('data:')) {
+          try {
+            const resp = await fetch(src);
+            const blob = await resp.blob();
+            const dataUrl = await new Promise((ok, fail) => {
+              const reader = new FileReader();
+              reader.onload = () => ok(reader.result);
+              reader.onerror = fail;
+              reader.readAsDataURL(blob);
+            });
+            r = { dataUrl, mimeType: blob.type, size: blob.size };
+          } catch(e) { r = { error: e.message }; }
+        } else {
+          r = await bg('fetchAsBase64', {url: src});
+        }
+        if (!r.error && r.size > 200) {
+          result.allImages.push({
+            src, dataUrl: r.dataUrl, mimeType: r.mimeType, size: r.size, alt: img.alt || ''
+          });
+        }
+      }
+    }
+    console.log('[CEP] Gemini final image count after fallback:', result.allImages.length);
+  }
+
+  function detectImageMime(dataUrl) {
+    if (!dataUrl || typeof dataUrl !== 'string') return null;
+    const parts = dataUrl.split(',');
+    if (parts.length < 2) return null;
+    const base64 = parts[1];
+    
+    if (base64.startsWith('/9j/')) return 'image/jpeg';
+    if (base64.startsWith('iVBORw0KGgo')) return 'image/png';
+    if (base64.startsWith('R0lGOD')) return 'image/gif';
+    if (base64.startsWith('UklGR') && base64.includes('WEBP')) return 'image/webp';
+    return null;
+  }
+
   // Add any generic/unconsumed store files that were not matched to any DOM chip
   for (const [k, v] of Object.entries(store || {})) {
     if (consumedStore.has(v)) continue;
     if (!v.filename) continue;
-    const mime = (v.mimeType || '').toLowerCase();
-    if (mime.startsWith('image/')) continue;
+
+    // On Gemini, skip generic "file" or "file.txt" entries from the intercepted store
+    // These are metadata artifacts, not actual user files
+    if (PLAT === 'gemini') {
+      const fn = v.filename.toLowerCase().trim();
+      if (fn === 'file' || fn === 'file.txt' || fn === 'upload' || fn === 'blob') {
+        console.log('[CEP] Skipping generic Gemini store entry:', v.filename);
+        continue;
+      }
+    }
+
+    let mime = (v.mimeType || '').toLowerCase();
+    let filename = v.filename;
+    let isImage = mime.startsWith('image/') || /\.(png|jpe?g|webp|gif)$/i.test(filename);
     
-    result.allFiles.push({
-      name: v.filename,
-      dataUrl: v.dataUrl,
-      mimeType: v.mimeType,
-      source: 'intercepted-fallback',
-      note: '✓ data'
-    });
+    // Attempt magic number recovery if not already known image
+    if (!isImage && v.dataUrl) {
+      const detectedMime = detectImageMime(v.dataUrl);
+      if (detectedMime) {
+        mime = detectedMime;
+        isImage = true;
+        // Rename if extension is .bin or missing
+        const ext = detectedMime.split('/')[1];
+        if (filename.toLowerCase().endsWith('.bin')) {
+          filename = filename.slice(0, -4) + '.' + (ext === 'jpeg' ? 'jpg' : ext);
+        } else if (!filename.includes('.')) {
+          filename = filename + '.' + (ext === 'jpeg' ? 'jpg' : ext);
+        }
+        console.log(`[CEP] Recovered image from binary data: ${v.filename} -> ${filename} (${detectedMime})`);
+      }
+    }
+
+    if (isImage) {
+      // Add to allImages if not already present
+      const srcUrl = v.url || filename;
+      result.allImages.push({
+        src: srcUrl,
+        dataUrl: v.dataUrl,
+        mimeType: mime,
+        size: v.size || (v.dataUrl ? Math.round(v.dataUrl.split(',')[1].length * 0.75) : 0),
+        alt: filename
+      });
+    } else {
+      result.allFiles.push({
+        name: filename,
+        dataUrl: v.dataUrl,
+        mimeType: mime,
+        source: 'intercepted-fallback',
+        note: '✓ data'
+      });
+    }
     consumedStore.add(v);
   }
 
-  // Deduplicate images
+  // Deduplicate images - multi-key approach:
+  // 1. Content-based: dataUrl prefix (catches same content from different URLs)
+  // 2. URL-based: normalized src (catches same asset from different endpoints)
+  // For Grok: strip trailing path suffixes like /content, /preview-image, /original-image
+  // For ChatGPT: use full URL (different query params = different images)
+  // For Claude/Gemini: strip query params
   const si=new Set();
-  result.allImages = result.allImages.filter(i=>{if(si.has(i.src))return false;si.add(i.src);return true;});
+  function normalizeImageUrl(src) {
+    if (!src) return '';
+    let url = src;
+    // Grok: strip asset endpoint suffixes to get base asset path
+    if (PLAT === 'grok' && url.includes('assets.grok.com')) {
+      url = url.replace(/\/(content|preview-image|original-image|original|image|thumb|thumbnail)$/i, '');
+    }
+    // Strip query params for non-ChatGPT
+    if (PLAT !== 'chatgpt') {
+      url = url.replace(/\?.*$/, '');
+    }
+    return url;
+  }
+  result.allImages = result.allImages.filter(i => {
+    const keys = [];
+    // Key 1: content-based (dataUrl prefix)
+    if (i.dataUrl && i.dataUrl.length > 50) {
+      keys.push('data:' + i.dataUrl.substring(0, 200));
+    }
+    // Key 2: normalized URL
+    const normUrl = normalizeImageUrl(i.src);
+    if (normUrl) keys.push('url:' + normUrl);
+    
+    // If ANY key was already seen, it's a duplicate
+    if (keys.some(k => si.has(k))) return false;
+    // Add all keys
+    keys.forEach(k => si.add(k));
+    return true;
+  });
 
   // Deduplicate files, preferring versions with dataUrl
   const fileMap = new Map();

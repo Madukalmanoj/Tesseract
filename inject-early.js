@@ -1009,7 +1009,8 @@
   window.addEventListener('__cepQuery', async () => {
     console.log("[CEP] __cepQuery event received. authHeader:", !!window.__cep.authHeader);
     
-    // 1. Try to fetch conversation history if authHeader is available and we are on a chatgpt conversation page
+    try {
+      // 1. Try to fetch conversation history if authHeader is available and we are on a chatgpt conversation page
     if (window.__cep.authHeader && window.location.hostname.includes('chatgpt.com')) {
       const match = window.location.pathname.match(/\/c\/([a-f0-9-]{36})/);
       const convId = match ? match[1] : null;
@@ -1039,8 +1040,9 @@
              
             console.log("[CEP] __cepQuery: Parsed tree. idMap size:", Object.keys(window.__cep.idMap).length);
             
-            // On-demand fetch file binaries programmatically in the page context (same-origin, cookie & auth-safe!)
-            for (const [fileId, filename] of Object.entries(window.__cep.idMap)) {
+            // On-demand fetch file binaries programmatically in parallel
+            const _downloadEntries = Object.entries(window.__cep.idMap);
+            await Promise.all(_downloadEntries.map(async ([fileId, filename]) => {
               const k = filename.toLowerCase().trim();
               // Only download valid OpenAI storage IDs (starting with file-, file_ or libfile_)
               const isOaiFile = typeof fileId === 'string' && (fileId.startsWith('file-') || fileId.startsWith('file_') || fileId.startsWith('libfile_'));
@@ -1117,7 +1119,7 @@
                   console.warn("[CEP] Failed on-demand fetch for file:", filename, e);
                 }
               }
-            }
+            }));
           }
         } catch(e) {
           console.warn("[CEP] On-demand conversation fetch failed:", e);
@@ -1339,17 +1341,20 @@
         console.log("[CEP] __cepQuery (Claude): Path does not match conversation UUID or orgId is missing. path:", window.location.pathname, "orgId:", orgId);
       }
     }
-    
-    console.log("[CEP] __cepQuery: Dispatching __cepReply. Store files size:", Object.keys(window.__cep.files).length);
-    window.dispatchEvent(new CustomEvent('__cepReply', {
-      detail: {
-        files: window.__cep.files,
-        orgId: window.__cep.orgId,
-        authHeader: window.__cep.authHeader,
-        idMap: window.__cep.idMap,
-        downloadUrlMap: window.__cep.downloadUrlMap || {}
-      }
-    }));
+    } catch(err) {
+      console.error("[CEP] Error during __cepQuery handling:", err);
+    } finally {
+      console.log("[CEP] __cepQuery: Dispatching __cepReply. Store files size:", Object.keys(window.__cep.files).length);
+      window.dispatchEvent(new CustomEvent('__cepReply', {
+        detail: {
+          files: window.__cep.files,
+          orgId: window.__cep.orgId,
+          authHeader: window.__cep.authHeader,
+          idMap: window.__cep.idMap,
+          downloadUrlMap: window.__cep.downloadUrlMap || {}
+        }
+      }));
+    }
   });
   window.addEventListener('__cepStore', e => {
     const {filename,dataUrl,mimeType,url} = e.detail||{};
