@@ -861,20 +861,48 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
     let foundSpecific = false;
 
     // First pass: try specific selectors
+    if (PLAT === 'gemini') {
+      console.log('[CEP] Gemini debug: extractFiles called for turn:', turn.tagName, 'class:', turn.className, 'role:', getRole(turn));
+    }
     for (const sel of specificSels) {
-      for (const chip of querySelectorAllShadow(sel, turn)) {
-        if (isInsideUI(chip)) continue;
+      const foundChips = querySelectorAllShadow(sel, turn);
+      if (PLAT === 'gemini' && foundChips.length > 0) {
+        console.log('[CEP] Gemini debug: selector', sel, 'found', foundChips.length, 'potential chips');
+      }
+      for (const chip of foundChips) {
+        const insideUI = isInsideUI(chip);
         const name = chipText(chip);
+        const cleanName = name ? name.replace(/^\d{10,13}_/, '') : null;
+        
+        if (PLAT === 'gemini') {
+          console.log('[CEP] Gemini debug: chip element:', chip.tagName, 'class:', chip.className, 'insideUI:', insideUI, 'name:', name, 'cleanName:', cleanName);
+        }
+        
+        if (insideUI) continue;
         if (!name) continue;
-        const cleanName = name.replace(/^\d{10,13}_/, '');
         
         const nameLower = cleanName.toLowerCase().trim();
         const hasDot = nameLower.includes('.');
         const isSpecial = nameLower === 'zip' || nameLower === 'pasted';
-        if (!hasDot && !isSpecial) continue;
+        if (!hasDot && !isSpecial) {
+          if (PLAT === 'gemini') console.log('[CEP] Gemini debug: skipped because no dot and not special');
+          continue;
+        }
         
-        if (isUINoiseFileName(cleanName) || seen.has(cleanName.toLowerCase())) continue;
-        if (turnChips.some(c => c.name.toLowerCase() === cleanName.toLowerCase())) continue;
+        if (isUINoiseFileName(cleanName)) {
+          if (PLAT === 'gemini') console.log('[CEP] Gemini debug: skipped as UI noise file name');
+          continue;
+        }
+        if (seen.has(cleanName.toLowerCase())) {
+          if (PLAT === 'gemini') console.log('[CEP] Gemini debug: skipped because already seen');
+          continue;
+        }
+        if (turnChips.some(c => c.name.toLowerCase() === cleanName.toLowerCase())) {
+          if (PLAT === 'gemini') console.log('[CEP] Gemini debug: skipped because duplicate in turnChips');
+          continue;
+        }
+        
+        if (PLAT === 'gemini') console.log('[CEP] Gemini debug: ADDED chip:', cleanName);
         turnChips.push({ name: cleanName, chip });
         foundSpecific = true;
       }
@@ -882,18 +910,46 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
 
     // Second pass: only try broad selectors if no specific chips found, with strict filename check
     if (!foundSpecific) {
+      if (PLAT === 'gemini') {
+        console.log('[CEP] Gemini debug: No specific chips found, running broad pass...');
+      }
       for (const sel of broadSels) {
-        for (const chip of querySelectorAllShadow(sel, turn)) {
-          if (isInsideUI(chip)) continue;
+        const foundChips = querySelectorAllShadow(sel, turn);
+        if (PLAT === 'gemini' && foundChips.length > 0) {
+          console.log('[CEP] Gemini debug: broad selector', sel, 'found', foundChips.length, 'potential chips');
+        }
+        for (const chip of foundChips) {
+          const insideUI = isInsideUI(chip);
           const name = chipText(chip);
+          const cleanName = name ? name.replace(/^\d{10,13}_/, '') : null;
+          
+          if (PLAT === 'gemini') {
+            console.log('[CEP] Gemini debug: broad chip element:', chip.tagName, 'class:', chip.className, 'insideUI:', insideUI, 'name:', name, 'cleanName:', cleanName);
+          }
+          
+          if (insideUI) continue;
           if (!name) continue;
-          const cleanName = name.replace(/^\d{10,13}_/, '');
           
           // Strict filter: must look like an actual filename, not a sentence
-          if (!isLikelyFileName(cleanName)) continue;
+          if (!isLikelyFileName(cleanName)) {
+            if (PLAT === 'gemini') console.log('[CEP] Gemini debug: skipped because not likely filename');
+            continue;
+          }
           
-          if (isUINoiseFileName(cleanName) || seen.has(cleanName.toLowerCase())) continue;
-          if (turnChips.some(c => c.name.toLowerCase() === cleanName.toLowerCase())) continue;
+          if (isUINoiseFileName(cleanName)) {
+            if (PLAT === 'gemini') console.log('[CEP] Gemini debug: skipped broad chip as UI noise');
+            continue;
+          }
+          if (seen.has(cleanName.toLowerCase())) {
+            if (PLAT === 'gemini') console.log('[CEP] Gemini debug: skipped broad chip because already seen');
+            continue;
+          }
+          if (turnChips.some(c => c.name.toLowerCase() === cleanName.toLowerCase())) {
+            if (PLAT === 'gemini') console.log('[CEP] Gemini debug: skipped broad chip because duplicate in turnChips');
+            continue;
+          }
+          
+          if (PLAT === 'gemini') console.log('[CEP] Gemini debug: ADDED broad chip:', cleanName);
           turnChips.push({ name: cleanName, chip });
         }
       }
