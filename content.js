@@ -1015,8 +1015,14 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
 
         // Strategy 4: Programmatic click download option
         if (!downloadUrl && chipEl) {
+          console.log('[CEP] Gemini debug: Strategy 4 for chip:', chipItem.name);
           // Find all download buttons in the turn
           const btns = querySelectorAllShadow('[aria-label*="Download" i], [title*="Download" i], button[class*="download" i], a[class*="download" i], [class*="download" i]', turn);
+          console.log('[CEP] Gemini debug: found download buttons count:', btns.length);
+          btns.forEach((b, i) => {
+            console.log(`[CEP] Gemini debug: btn ${i}:`, b.tagName, 'aria-label:', b.getAttribute('aria-label'), 'title:', b.getAttribute('title'), 'class:', b.className, 'text:', b.innerText || b.textContent);
+          });
+          
           let downloadBtn = null;
           if (btns.length === 1) {
             downloadBtn = btns[0];
@@ -1034,18 +1040,28 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
             }
           }
 
+          if (!downloadBtn) {
+            // Let's list all buttons in the turn to see if we missed any selector
+            const allBtnsInTurn = querySelectorAllShadow('button, a, [role="button"], [class*="button" i]', turn);
+            console.log('[CEP] Gemini debug: List of all potential interactive elements in turn:', allBtnsInTurn.length);
+            allBtnsInTurn.slice(0, 15).forEach((b, i) => {
+              console.log(`[CEP] Gemini debug: element ${i}:`, b.tagName, 'aria-label:', b.getAttribute('aria-label'), 'class:', b.className, 'text:', (b.innerText || b.textContent || '').substring(0, 50));
+            });
+          }
+
           if (downloadBtn) {
-            console.log('[CEP] Gemini: Found download button for chip:', chipItem.name, '— programmatically clicking...');
+            console.log('[CEP] Gemini: Found download button for chip:', chipItem.name, '— programmatically clicking...', downloadBtn);
             try {
               // Retrieve current store to get the count of intercepted downloads before clicking
               let pageStore = await getStore();
               const beforeCount = (pageStore.interceptedDownloads || []).length;
+              console.log('[CEP] Gemini debug: beforeCount of downloads:', beforeCount);
               
               // Click it!
               downloadBtn.click();
               
-              // Wait up to 1 second for interceptor to catch the URL
-              for (let wait = 0; wait < 10; wait++) {
+              // Wait up to 1.5 seconds for interceptor to catch the URL
+              for (let wait = 0; wait < 15; wait++) {
                 await new Promise(ok => setTimeout(ok, 100));
                 pageStore = await getStore();
                 const afterCount = (pageStore.interceptedDownloads || []).length;
@@ -1055,6 +1071,9 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
                   console.log('[CEP] Gemini: Intercepted download URL via click:', downloadUrl);
                   break;
                 }
+              }
+              if (!downloadUrl) {
+                console.log('[CEP] Gemini debug: click did not result in a new intercepted download URL in the store.');
               }
             } catch (err) {
               console.warn('[CEP] Gemini: Failed during programmatic download click:', err);

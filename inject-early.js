@@ -275,7 +275,7 @@
         url = new URL(url, window.location.href).href;
       } catch(_) {}
       
-      console.log('[CEP] Gemini: Intercepted download URL:', url, 'filename:', filename);
+      console.log('[CEP] Gemini: Intercepted download URL in hook:', url, 'filename:', filename);
       
       if (!window.__cep.interceptedDownloads) window.__cep.interceptedDownloads = [];
       window.__cep.interceptedDownloads.push({
@@ -289,6 +289,7 @@
     const _origAnchorClick = HTMLAnchorElement.prototype.click;
     HTMLAnchorElement.prototype.click = function() {
       const href = this.href || this.getAttribute('href');
+      console.log('[CEP] Gemini debug: HTMLAnchorElement.prototype.click called, href:', href);
       if (href && (href.includes('usercontent.google.com') || href.includes('contribution.usercontent.google.com') || href.includes('drive.google.com/viewer') || href.includes('docs.google.com/viewer'))) {
         const filename = this.download || this.innerText || this.textContent || '';
         captureDownloadUrl(href, filename.trim());
@@ -300,6 +301,7 @@
     // 2. Hook window.open
     const _origWindowOpen = window.open;
     window.open = function(url, ...args) {
+      console.log('[CEP] Gemini debug: window.open called, url:', url);
       if (url && typeof url === 'string' && (url.includes('usercontent.google.com') || url.includes('contribution.usercontent.google.com') || url.includes('drive.google.com/viewer') || url.includes('docs.google.com/viewer'))) {
         captureDownloadUrl(url);
         return null; // block opening new window
@@ -311,6 +313,7 @@
     const _origAssign = window.location.assign;
     if (_origAssign) {
       window.location.assign = function(url) {
+        console.log('[CEP] Gemini debug: location.assign called, url:', url);
         if (url && typeof url === 'string' && (url.includes('usercontent.google.com') || url.includes('contribution.usercontent.google.com') || url.includes('drive.google.com/viewer') || url.includes('docs.google.com/viewer'))) {
           captureDownloadUrl(url);
           return; // block navigation
@@ -321,6 +324,7 @@
     const _origReplace = window.location.replace;
     if (_origReplace) {
       window.location.replace = function(url) {
+        console.log('[CEP] Gemini debug: location.replace called, url:', url);
         if (url && typeof url === 'string' && (url.includes('usercontent.google.com') || url.includes('contribution.usercontent.google.com') || url.includes('drive.google.com/viewer') || url.includes('docs.google.com/viewer'))) {
           captureDownloadUrl(url);
           return; // block navigation
@@ -332,6 +336,7 @@
     // 4. Intercept clicks on links that are not handled programmatically
     window.addEventListener('click', function(e) {
       let target = e.target;
+      console.log('[CEP] Gemini debug: Global window click listener caught click on:', target.tagName, 'class:', target.className);
       while (target) {
         if (target.tagName === 'A') {
           const href = target.href || target.getAttribute('href') || '';
