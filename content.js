@@ -876,6 +876,7 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
         
         if (PLAT === 'gemini') {
           console.log('[CEP] Gemini debug: chip element:', chip.tagName, 'class:', chip.className, 'insideUI:', insideUI, 'name:', name, 'cleanName:', cleanName);
+          console.log('[CEP] Gemini debug: chip outerHTML:', chip.outerHTML);
         }
         
         if (insideUI) continue;
