@@ -341,7 +341,7 @@ function cleanAttachmentName(name) {
   return clean;
 }
 
-// Recursively search the DOM, including shadow roots, for all elements matching the selector
+// Recursively search the DOM, including shadow roots and same-origin iframes, for all elements matching the selector
 function querySelectorAllShadow(selector, root = document) {
   const matches = [];
   function recurse(node) {
@@ -354,6 +354,15 @@ function querySelectorAllShadow(selector, root = document) {
     }
     if (node.shadowRoot) {
       recurse(node.shadowRoot);
+    }
+    if (node.tagName === 'IFRAME') {
+      try {
+        if (node.contentDocument) {
+          recurse(node.contentDocument);
+        }
+      } catch (_) {
+        // Cross-origin iframe, ignore
+      }
     }
     const childs = node.childNodes || [];
     for (let i = 0; i < childs.length; i++) {
@@ -569,6 +578,17 @@ async function extractImages(turn, idMap = {}) {
 
     // Skip UI elements only if they are not known uploaded/chat images
     if (!isUploadedImg && isInsideUI(img)) { console.log('[CEP] Skipped: inside UI'); continue; }
+
+    // Skip file type icons and other UI icons
+    const isIcon = (img.className && typeof img.className === 'string' && img.className.toLowerCase().includes('icon')) ||
+                   (img.getAttribute('alt') || '').toLowerCase().includes('icon') ||
+                   (img.getAttribute('aria-label') || '').toLowerCase().includes('icon') ||
+                   sl.includes('drive-thirdparty.googleusercontent.com') ||
+                   sl.includes('drive-thirdparty');
+    if (isIcon && !isUploadedImg) {
+      console.log('[CEP] Skipped: detected as UI/file icon:', src);
+      continue;
+    }
 
     let isAvatar = false;
     if (!isUploadedImg) {
@@ -1043,14 +1063,38 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
         let downloadUrl = null;
         const chipEl = chipItem.chip;
         
+        // Strategy 0: Look up download URL in memory store (urlMap / downloadUrlMap)
+        if (window.__cep?.urlMap) {
+          for (const [url, name] of Object.entries(window.__cep.urlMap)) {
+            if (name && name.toLowerCase() === chipItem.name.toLowerCase()) {
+              downloadUrl = url;
+              console.log('[CEP] Gemini: Found download URL in urlMap for filename:', chipItem.name, 'url:', downloadUrl);
+              break;
+            }
+          }
+        }
+        if (!downloadUrl && chipEl && window.__cep?.downloadUrlMap) {
+          let fileId = null;
+          for (const attr of chipEl.attributes) {
+            if (attr.value && attr.value.includes('files/')) {
+              fileId = attr.value;
+              break;
+            }
+          }
+          if (fileId && window.__cep.downloadUrlMap[fileId]) {
+            downloadUrl = window.__cep.downloadUrlMap[fileId];
+            console.log('[CEP] Gemini: Found download URL in downloadUrlMap for fileId:', fileId, 'url:', downloadUrl);
+          }
+        }
+        
         // Strategy 1: Look for download links/anchors near the chip
-        if (chipEl) {
+        if (!downloadUrl && chipEl) {
           // Check the chip itself and its ancestors for a download link
           const searchRoot = chipEl.closest('[class*="message"]') || chipEl.closest('[class*="turn"]') || chipEl.parentElement?.parentElement || chipEl;
-          const links = searchRoot.querySelectorAll('a[href*="usercontent.google.com"], a[href*="download"], a[download]');
+          const links = searchRoot.querySelectorAll('a[href*="googleusercontent.com"], a[href*="usercontent.google.com"], a[href*="download"], a[download]');
           for (const link of links) {
             const href = link.href || link.getAttribute('href') || '';
-            if (href.includes('usercontent.google.com/download') || href.includes('contribution.usercontent.google.com')) {
+            if (href.includes('googleusercontent.com/download') || href.includes('usercontent.google.com/download') || href.includes('contribution.usercontent.google.com')) {
               downloadUrl = href;
               break;
             }
@@ -1059,7 +1103,7 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
         
         // Strategy 2: Scan the full page for download URLs matching this conversation
         if (!downloadUrl) {
-          const allLinks = document.querySelectorAll('a[href*="usercontent.google.com/download"]');
+          const allLinks = document.querySelectorAll('a[href*="googleusercontent.com/download"], a[href*="usercontent.google.com/download"]');
           for (const link of allLinks) {
             downloadUrl = link.href || link.getAttribute('href');
             if (downloadUrl) break;
@@ -1152,7 +1196,12 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
         if (downloadUrl) {
           console.log('[CEP] Gemini: fetching old file via download URL:', chipItem.name, downloadUrl.substring(0, 80) + '...');
           try {
-            const r = await bg('fetchAsBase64', { url: downloadUrl });
+            const { authHeader } = await getStore();
+            const headers = {};
+            if (authHeader) {
+              headers['Authorization'] = authHeader;
+            }
+            const r = await bg('fetchAsBase64', { url: downloadUrl, headers });
             if (!r.error && r.dataUrl) {
               add({
                 name: chipItem.name,
@@ -1333,8 +1382,53 @@ function findSurroundingFilename(el) {
   return '';
 }
 
+function extractFileIdFromUrl(url) {
+  if (!url || typeof url !== 'string') return null;
+  const u = decodeURIComponent(url);
+  // Match drive.google.com/file/d/FILE_ID/view or preview
+  const m1 = u.match(/\/file\/d\/([a-zA-Z0-9_-]{25,50})/);
+  if (m1) return m1[1];
+  // Match drive.google.com/d/FILE_ID/view
+  const m2 = u.match(/\/d\/([a-zA-Z0-9_-]{25,50})/);
+  if (m2) return m2[1];
+  // Match srcid=FILE_ID
+  const m3 = u.match(/[?&]srcid=([a-zA-Z0-9_-]{25,50})/);
+  if (m3) return m3[1];
+  // Match id=FILE_ID
+  const m4 = u.match(/[?&]id=([a-zA-Z0-9_-]{25,50})/);
+  if (m4) return m4[1];
+  return null;
+}
+
+function extractDirectUrlFromViewerUrl(url) {
+  if (!url || typeof url !== 'string') return null;
+  
+  // Case 1: Google Docs Viewer url parameter
+  const mUrl = url.match(/[?&]url=([^&]+)/);
+  if (mUrl) {
+    const decoded = decodeURIComponent(mUrl[1]);
+    if (decoded.includes('googleusercontent.com') || decoded.includes('googleapis.com') || decoded.includes('google.com')) {
+      return decoded;
+    }
+  }
+  
+  // Case 2: Google Drive File ID
+  const fileId = extractFileIdFromUrl(url);
+  if (fileId) {
+    return `https://drive.google.com/uc?export=download&id=${fileId}`;
+  }
+  
+  return null;
+}
+
 async function triggerGeminiFileDownloads() {
   console.log('[CEP] Gemini: scanning for file preview cards and citation chips...');
+  
+  const { authHeader } = await getStore();
+  const headers = {};
+  if (authHeader) {
+    headers['Authorization'] = authHeader;
+  }
   
   // Find all file preview buttons inside the user query blocks
   const queryFileCards = querySelectorAllShadow('button.new-file-preview-file, [data-test-id="uploaded-file"] button, .file-preview-container button', document);
@@ -1363,46 +1457,154 @@ async function triggerGeminiFileDownloads() {
       console.log('[CEP] Gemini: Clicking target to open preview/citation details...', target);
       target.click();
       
-      // Wait for panel/modal to open
-      await new Promise(ok => setTimeout(ok, 450));
+      // Poll for download buttons or direct Google Drive File IDs to appear (up to 2.5 seconds)
+      let downloadBtns = [];
+      let foundSidenav = null;
+      let directDlUrl = null;
+      console.log('[CEP] Gemini: Waiting for preview/download content to appear...');
       
-      // Find all download buttons now visible on the page
-      const downloadBtns = querySelectorAllShadow('[aria-label*="Download" i], [title*="Download" i], button[class*="download" i], a[class*="download" i], [class*="download" i]', document);
-      if (downloadBtns.length > 0) {
-        console.log('[CEP] Gemini: Found download buttons in view:', downloadBtns.length);
-        for (const btn of downloadBtns) {
-          let pageStore = await getStore();
-          const beforeCount = (pageStore.interceptedDownloads || []).length;
-          
-          console.log('[CEP] Gemini: Clicking download button:', btn);
-          btn.click();
-          
-          // Wait up to 1 second for the main-world hook to intercept the URL
-          for (let wait = 0; wait < 10; wait++) {
-            await new Promise(ok => setTimeout(ok, 100));
-            pageStore = await getStore();
-            const afterCount = (pageStore.interceptedDownloads || []).length;
-            if (afterCount > beforeCount) {
-              const newDownload = pageStore.interceptedDownloads[pageStore.interceptedDownloads.length - 1];
-              // Resolve filename
-              const filename = newDownload.filename || findSurroundingFilename(btn) || findSurroundingFilename(target);
-              if (filename) {
-                console.log('[CEP] Gemini: Fetching intercepted download:', filename, newDownload.url);
-                const r = await bg('fetchAsBase64', { url: newDownload.url });
-                if (!r.error && r.dataUrl) {
-                  // Save to page store
-                  window.dispatchEvent(new CustomEvent('__cepStore', {
-                    detail: {
-                      filename: filename,
-                      dataUrl: r.dataUrl,
-                      mimeType: r.mimeType || 'application/octet-stream',
-                      url: newDownload.url
-                    }
-                  }));
-                  console.log('[CEP] Gemini: Successfully saved file to store:', filename);
-                }
-              }
+      for (let poll = 0; poll < 25; poll++) {
+        // Strategy A: Scan for same-origin iframes, embeds, objects or links containing a Google Drive File ID or Docs Viewer URL
+        const iframes = querySelectorAllShadow('iframe, embed, object', document);
+        for (const iframe of iframes) {
+          const src = iframe.src || iframe.getAttribute('src') || iframe.data || iframe.getAttribute('data') || '';
+          const direct = extractDirectUrlFromViewerUrl(src);
+          if (direct) {
+            directDlUrl = direct;
+            console.log('[CEP] Gemini: Extracted direct URL from iframe/embed/object src:', directDlUrl);
+            break;
+          }
+        }
+        
+        if (!directDlUrl) {
+          const links = querySelectorAllShadow('a', document);
+          for (const link of links) {
+            const href = link.href || link.getAttribute('href') || '';
+            const direct = extractDirectUrlFromViewerUrl(href);
+            if (direct) {
+              directDlUrl = direct;
+              console.log('[CEP] Gemini: Extracted direct URL from link href:', directDlUrl);
               break;
+            }
+          }
+        }
+        
+        if (directDlUrl) {
+          break;
+        }
+        
+        // Strategy B: Scan for download buttons
+        const potential = querySelectorAllShadow('button, a, [role="button"], [class*="download" i]', document);
+        downloadBtns = potential.filter(el => {
+          const label = (el.getAttribute('aria-label') || '').toLowerCase();
+          const title = (el.getAttribute('title') || '').toLowerCase();
+          const cls = (el.className || '').toLowerCase();
+          const txt = (el.innerText || el.textContent || '').toLowerCase();
+          
+          if (label.includes('download') || title.includes('download') || cls.includes('download') || txt.includes('download')) {
+            return true;
+          }
+          
+          const icons = querySelectorAllShadow('mat-icon, lumi-icon, .material-icons', el);
+          for (const icon of icons) {
+            const iconText = (icon.innerText || icon.textContent || '').toLowerCase().trim();
+            if (iconText === 'download' || iconText === 'file_download' || iconText === 'get_app') {
+              return true;
+            }
+          }
+          return false;
+        });
+        
+        if (downloadBtns.length > 0) {
+          console.log('[CEP] Gemini: Found download buttons after', (poll + 1) * 100, 'ms:', downloadBtns.length);
+          break;
+        }
+        
+        if (!foundSidenav) {
+          const closeBtn = querySelectorShadow('.close-sidenav-button, [class*="close-sidenav" i], [class*="close-button" i]', document);
+          if (closeBtn) {
+            foundSidenav = closeBtn.closest('[class*="sidenav" i]') || closeBtn.closest('[class*="drawer" i]') || closeBtn.closest('[class*="dialog" i]') || closeBtn.closest('[class*="modal" i]') || closeBtn.parentElement;
+          }
+        }
+        
+        await new Promise(ok => setTimeout(ok, 100));
+      }
+      
+      // If we found a direct URL, fetch it directly
+      if (directDlUrl) {
+        const filename = findSurroundingFilename(target);
+        if (filename) {
+          console.log('[CEP] Gemini: Fetching resolved direct download URL:', filename, directDlUrl);
+          const r = await bg('fetchAsBase64', { url: directDlUrl, headers });
+          if (!r.error && r.dataUrl) {
+            window.dispatchEvent(new CustomEvent('__cepStore', {
+              detail: {
+                filename: filename,
+                dataUrl: r.dataUrl,
+                mimeType: r.mimeType || 'application/octet-stream',
+                url: directDlUrl
+              }
+            }));
+            console.log('[CEP] Gemini: Successfully saved file via direct URL:', filename);
+          } else {
+            console.log('[CEP] Gemini: Direct fetch failed, error:', r.error);
+          }
+        }
+      } else {
+        // Fallback to programmatic button click
+        if (downloadBtns.length === 0) {
+          console.log('[CEP] Gemini debug: No download buttons found. Listing all interactive elements in document to inspect...');
+          const allInteractive = querySelectorAllShadow('button, a, [role="button"]', document);
+          console.log('[CEP] Gemini debug: Found', allInteractive.length, 'interactive elements:');
+          allInteractive.forEach((el, index) => {
+            const label = el.getAttribute('aria-label') || '';
+            const title = el.getAttribute('title') || '';
+            const cls = el.className || '';
+            const txt = (el.innerText || el.textContent || '').trim().substring(0, 100);
+            
+            const icons = querySelectorAllShadow('mat-icon, lumi-icon, .material-icons', el);
+            const iconText = icons.map(ico => ico.innerText || ico.textContent || '').join(', ');
+            
+            console.log(`[CEP] Element #${index}: <${el.tagName}> label="${label}" title="${title}" class="${cls}" text="${txt}" icons="${iconText}"`);
+          });
+        }
+        
+        if (downloadBtns.length > 0) {
+          console.log('[CEP] Gemini: Found download buttons in view:', downloadBtns.length);
+          for (const btn of downloadBtns) {
+            let pageStore = await getStore();
+            const beforeCount = (pageStore.interceptedDownloads || []).length;
+            
+            console.log('[CEP] Gemini: Clicking download button:', btn);
+            btn.click();
+            
+            // Wait up to 1.5 seconds for the main-world hook to intercept the URL
+            for (let wait = 0; wait < 15; wait++) {
+              await new Promise(ok => setTimeout(ok, 100));
+              pageStore = await getStore();
+              const afterCount = (pageStore.interceptedDownloads || []).length;
+              if (afterCount > beforeCount) {
+                const newDownload = pageStore.interceptedDownloads[pageStore.interceptedDownloads.length - 1];
+                // Resolve filename
+                const filename = newDownload.filename || findSurroundingFilename(btn) || findSurroundingFilename(target);
+                if (filename) {
+                  console.log('[CEP] Gemini: Fetching intercepted download:', filename, newDownload.url);
+                  const r = await bg('fetchAsBase64', { url: newDownload.url, headers });
+                  if (!r.error && r.dataUrl) {
+                    // Save to page store
+                    window.dispatchEvent(new CustomEvent('__cepStore', {
+                      detail: {
+                        filename: filename,
+                        dataUrl: r.dataUrl,
+                        mimeType: r.mimeType || 'application/octet-stream',
+                        url: newDownload.url
+                      }
+                    }));
+                    console.log('[CEP] Gemini: Successfully saved file to store:', filename);
+                  }
+                }
+                break;
+              }
             }
           }
         }

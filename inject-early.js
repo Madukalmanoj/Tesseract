@@ -315,12 +315,24 @@
       });
     }
 
+    function isGoogleDownloadUrl(url) {
+      if (!url || typeof url !== 'string') return false;
+      const u = url.toLowerCase();
+      return u.includes('googleusercontent.com') ||
+             u.includes('usercontent.google.com') ||
+             u.includes('contribution.usercontent.google.com') ||
+             u.includes('drive.google.com/viewer') ||
+             u.includes('docs.google.com/viewer') ||
+             u.includes('drive.google.com/uc') ||
+             u.includes('docs.google.com/document/d');
+    }
+
     // 1. Hook HTMLAnchorElement.prototype.click
     const _origAnchorClick = HTMLAnchorElement.prototype.click;
     HTMLAnchorElement.prototype.click = function() {
       const href = this.href || this.getAttribute('href');
       console.log('[CEP] Gemini debug: HTMLAnchorElement.prototype.click called, href:', href);
-      if (href && (href.includes('usercontent.google.com') || href.includes('contribution.usercontent.google.com') || href.includes('drive.google.com/viewer') || href.includes('docs.google.com/viewer'))) {
+      if (href && isGoogleDownloadUrl(href)) {
         const filename = this.download || this.innerText || this.textContent || '';
         captureDownloadUrl(href, filename.trim(), this);
         return; // block the actual download/navigation
@@ -332,7 +344,7 @@
     const _origWindowOpen = window.open;
     window.open = function(url, ...args) {
       console.log('[CEP] Gemini debug: window.open called, url:', url);
-      if (url && typeof url === 'string' && (url.includes('usercontent.google.com') || url.includes('contribution.usercontent.google.com') || url.includes('drive.google.com/viewer') || url.includes('docs.google.com/viewer'))) {
+      if (url && isGoogleDownloadUrl(url)) {
         captureDownloadUrl(url, '', null);
         return null; // block opening new window
       }
@@ -344,7 +356,7 @@
     if (_origAssign) {
       window.location.assign = function(url) {
         console.log('[CEP] Gemini debug: location.assign called, url:', url);
-        if (url && typeof url === 'string' && (url.includes('usercontent.google.com') || url.includes('contribution.usercontent.google.com') || url.includes('drive.google.com/viewer') || url.includes('docs.google.com/viewer'))) {
+        if (url && isGoogleDownloadUrl(url)) {
           captureDownloadUrl(url, '', null);
           return; // block navigation
         }
@@ -355,7 +367,7 @@
     if (_origReplace) {
       window.location.replace = function(url) {
         console.log('[CEP] Gemini debug: location.replace called, url:', url);
-        if (url && typeof url === 'string' && (url.includes('usercontent.google.com') || url.includes('contribution.usercontent.google.com') || url.includes('drive.google.com/viewer') || url.includes('docs.google.com/viewer'))) {
+        if (url && isGoogleDownloadUrl(url)) {
           captureDownloadUrl(url, '', null);
           return; // block navigation
         }
@@ -370,7 +382,7 @@
       while (target) {
         if (target.tagName === 'A') {
           const href = target.href || target.getAttribute('href') || '';
-          if (href && (href.includes('usercontent.google.com') || href.includes('contribution.usercontent.google.com') || href.includes('drive.google.com/viewer') || href.includes('docs.google.com/viewer'))) {
+          if (href && isGoogleDownloadUrl(href)) {
             const filename = target.download || target.innerText || target.textContent || '';
             captureDownloadUrl(href, filename.trim(), target);
             e.preventDefault();
@@ -868,7 +880,8 @@
         u.includes('generativelanguage.googleapis.com') ||
         u.includes('upload.googleapis.com') ||
         u.includes('content-push.googleapis.com') ||
-        u.includes('drivedl.googleapis.com')
+        u.includes('drivedl.googleapis.com') ||
+        u.includes('googleusercontent.com')
       ));
     const fileMime = c.includes('pdf')||c.includes('zip')||c.includes('msword')||
       c.includes('officedocument')||c.includes('octet-stream')||

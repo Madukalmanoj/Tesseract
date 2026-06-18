@@ -15,7 +15,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     return true;
   }
   if (req.action === "fetchAsBase64") {
-    fetchAsBase64(req.url).then(sendResponse).catch(e => sendResponse({ error: e.message }));
+    fetchAsBase64(req.url, req.headers).then(sendResponse).catch(e => sendResponse({ error: e.message }));
     return true;
   }
   if (req.action === "fetchChatGPTFile") {
@@ -52,7 +52,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
 });
 
 // ── Fetch any URL as base64 ───────────────────────────────────────────────────
-async function fetchAsBase64(url) {
+async function fetchAsBase64(url, customHeaders = null) {
   let res;
 
   // Custom fallback sequence for assets.grok.com
@@ -68,7 +68,9 @@ async function fetchAsBase64(url) {
     for (let i = 0; i < urlsToTry.length; i++) {
       const attemptUrl = urlsToTry[i];
       try {
-        res = await fetch(attemptUrl);
+        const opts = {};
+        if (customHeaders) opts.headers = customHeaders;
+        res = await fetch(attemptUrl, opts);
         if (res && res.ok) {
           url = attemptUrl; // update url for mime/size info
           break;
@@ -83,17 +85,23 @@ async function fetchAsBase64(url) {
   if (!res || !res.ok) {
     try {
       // Try with credentials for authenticated endpoints (Claude/ChatGPT private files)
-      res = await fetch(url, { credentials: "include" });
+      const opts = { credentials: "include" };
+      if (customHeaders) opts.headers = customHeaders;
+      res = await fetch(url, opts);
     } catch(e) {
       // Fallback without credentials for external CDN images
-      res = await fetch(url);
+      const opts = {};
+      if (customHeaders) opts.headers = customHeaders;
+      res = await fetch(url, opts);
     }
   }
 
   // If response is not ok or was blocked by CORS, retry without credentials
   if (!res || !res.ok) {
     try {
-      res = await fetch(url);
+      const opts = {};
+      if (customHeaders) opts.headers = customHeaders;
+      res = await fetch(url, opts);
     } catch(e) {
       throw new Error("HTTP fetch failed: " + e.message);
     }
