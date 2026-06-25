@@ -26,6 +26,10 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     handleLLMRefine(req).then(sendResponse).catch(e => sendResponse({ error: e.message }));
     return true;
   }
+  if (req.action === "testLLMKey") {
+    handleLLMTest(req).then(sendResponse).catch(e => sendResponse({ error: e.message }));
+    return true;
+  }
   if (req.action === "downloadDataUrl") {
     chrome.downloads.download({ url: req.dataUrl, filename: req.filename, saveAs: false },
       id => sendResponse({ ok: true, id }));
@@ -315,4 +319,45 @@ async function callGemini(apiKey, system, userMsg) {
   if (!res.ok) throw new Error("Gemini " + res.status + ": " + await res.text());
   const d = await res.json();
   return { text: d.candidates && d.candidates[0] && d.candidates[0].content && d.candidates[0].content.parts && d.candidates[0].content.parts[0] && d.candidates[0].content.parts[0].text || "" };
+}
+
+async function handleLLMTest({ provider, apiKey }) {
+  if (!apiKey) throw new Error("API key is empty.");
+  const user = "Hello";
+  
+  let res;
+  if (provider === "anthropic") {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({ model: "claude-opus-4-5", max_tokens: 1, messages: [{ role: "user", content: user }] })
+    });
+    if (!res.ok) throw new Error("Anthropic " + res.status + ": " + await res.text());
+  } else if (provider === "groq") {
+    res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + apiKey },
+      body: JSON.stringify({ model: "llama-3.3-70b-versatile", max_tokens: 1, messages: [{ role: "user", content: user }] })
+    });
+    if (!res.ok) throw new Error("Groq " + res.status + ": " + await res.text());
+  } else if (provider === "gemini") {
+    res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: user }] }],
+        generationConfig: { maxOutputTokens: 1 }
+      })
+    });
+    if (!res.ok) throw new Error("Gemini " + res.status + ": " + await res.text());
+  } else {
+    throw new Error("Unknown provider");
+  }
+  
+  return { success: true };
 }

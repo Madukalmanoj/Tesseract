@@ -130,6 +130,11 @@ function setProvider(prov) {
   document.querySelectorAll(".pvt").forEach(b => b.classList.toggle("sel", b.dataset.prov === prov));
   chrome.storage.local.set({ lastProvider: prov });
   updateProviderBadge();
+  const statusEl = $("testKeyStatus");
+  if (statusEl) {
+    statusEl.style.display = "none";
+    statusEl.innerHTML = "";
+  }
 }
 
 $("toggleKey").addEventListener("click", () => {
@@ -137,6 +142,42 @@ $("toggleKey").addEventListener("click", () => {
   const show = inp.type === "password";
   inp.type = show ? "text" : "password";
   $("toggleKey").textContent = show ? "hide" : "show";
+});
+
+$("btnTestKey").addEventListener("click", async () => {
+  const key = $("apiKeyInput").value.trim();
+  const statusEl = $("testKeyStatus");
+  if (!key) {
+    statusEl.textContent = "Enter a key first.";
+    statusEl.style.color = "var(--red)";
+    statusEl.style.display = "inline";
+    return;
+  }
+  
+  statusEl.textContent = "Testing...";
+  statusEl.style.color = "var(--t2)";
+  statusEl.style.display = "inline";
+  $("btnTestKey").disabled = true;
+  
+  try {
+    const res = await chrome.runtime.sendMessage({ action: "testLLMKey", provider: currentProvider, apiKey: key });
+    if (res.error) {
+      statusEl.textContent = "Failed ✗";
+      statusEl.style.color = "var(--red)";
+      statusEl.title = res.error;
+      alert(`Connection failed:\n\n${res.error}`);
+    } else {
+      statusEl.textContent = "Success ✓";
+      statusEl.style.color = "var(--green)";
+      statusEl.title = "Connection successful!";
+    }
+  } catch(e) {
+    statusEl.textContent = "Error ✗";
+    statusEl.style.color = "var(--red)";
+    statusEl.title = e.message;
+  } finally {
+    $("btnTestKey").disabled = false;
+  }
 });
 
 $("apiKeyInput").addEventListener("input", async () => {
