@@ -24,7 +24,7 @@ async function init() {
     document.querySelectorAll(".tport-btn").forEach(b => b.disabled = true);
   }
 
-  const stored = await chrome.storage.local.get(["apiKeys","lastProvider","llmEnabled"]);
+  const stored = await chrome.storage.local.get(["apiKeys","lastProvider","llmEnabled","open_tab"]);
   if (stored.lastProvider) setProvider(stored.lastProvider);
   if (stored.apiKeys?.[currentProvider]) $("apiKeyInput").value = stored.apiKeys[currentProvider];
 
@@ -35,7 +35,13 @@ async function init() {
     updateProviderBadge();
   }
 
-  if (location.hash === "#tab-capsules") {
+  if (stored.open_tab === "capsules") {
+    await chrome.storage.local.remove(["open_tab"]);
+    const capsulesTab = document.querySelector('.tab[data-tab="capsules"]');
+    if (capsulesTab) {
+      capsulesTab.click();
+    }
+  } else if (location.hash === "#tab-capsules") {
     const capsulesTab = document.querySelector('.tab[data-tab="capsules"]');
     if (capsulesTab) {
       capsulesTab.click();
@@ -365,7 +371,6 @@ async function renderCapsuleList() {
     const imgCount  = (cap.images||[]).filter(i=>i.dataUrl).length;
     const fileCount = (cap.files||[]).length;
     const fileDataCount = (cap.files||[]).filter(f=>f.dataUrl).length;
-    const tokCount  = cap.promptText ? Math.ceil(cap.promptText.length / 4) : 0;
 
     const card = document.createElement("div");
     card.className = "cap-card";
@@ -373,7 +378,6 @@ async function renderCapsuleList() {
       <div class="cap-name">💊 ${esc(cap.name)}</div>
       <div class="cap-meta">
         <span>${cap.platform || "chat"}</span>
-        <span>${tokCount} tokens</span>
         ${cap.llmRefined ? `<span style="color:var(--acc)">✦ refined</span>` : ""}
         ${imgCount  ? `<span>🖼 ${imgCount}</span>` : ""}
         ${fileCount ? `<span>📎 ${fileDataCount}/${fileCount} files</span>` : ""}

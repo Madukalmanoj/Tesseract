@@ -2771,25 +2771,12 @@ async function showTray(caps, llmEnabled) {
     <div class="cep-section">
       <div class="cep-section-title">⚡ Extract Chat</div>
       
-      <!-- LLM Auto-Refine section (collapsible) -->
-      <div class="cep-llm-section" id="cep-llmSection">
-        <div class="cep-llm-section-hdr">
-          <label class="cep-llm-toggle">
-            <input type="checkbox" id="cep-llmEnabled"> Auto-refine with LLM
-          </label>
-          <span id="cep-llmProviderBadge" style="font-size:10px;color:var(--cep-t3)"></span>
-        </div>
-        <div class="cep-llm-section-body" id="cep-llmBody" style="display:none">
-          <div class="cep-provider-tabs">
-            <button class="cep-pvt" data-prov="groq">⚡ Groq</button>
-            <button class="cep-pvt" data-prov="anthropic">🟠 Anthropic</button>
-            <button class="cep-pvt" data-prov="gemini">✦ Gemini</button>
-          </div>
-          <div class="cep-key-row">
-            <input type="password" id="cep-apiKeyInput" placeholder="Paste API key…" autocomplete="off"/>
-            <button class="cep-key-show" id="cep-toggleKey">show</button>
-          </div>
-        </div>
+      <!-- LLM Auto-Refine section (simple toggle) -->
+      <div class="cep-llm-section" id="cep-llmSection" style="margin-bottom: 12px; padding: 10px; display: flex; justify-content: space-between; align-items: center; background: var(--cep-s1); border: 1px solid var(--cep-b); border-radius: var(--cep-r);">
+        <label class="cep-llm-toggle" style="margin-bottom: 0; color: var(--cep-t2); font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+          <input type="checkbox" id="cep-llmEnabled" style="accent-color: var(--cep-acc); width: 14px; height: 14px; cursor: pointer;"> Auto-refine with LLM
+        </label>
+        <span id="cep-llmProviderBadge" style="font-size:10px;color:var(--cep-t3);text-transform:uppercase;font-weight:600;"></span>
       </div>
 
       <!-- Capsule name -->
@@ -2864,7 +2851,8 @@ async function showTray(caps, llmEnabled) {
   };
 
   // Section 2: Open capsules UI
-  el('cep-btnOpenPopup').onclick = () => {
+  el('cep-btnOpenPopup').onclick = async () => {
+    await chrome.storage.local.set({ open_tab: "capsules" });
     chrome.runtime.sendMessage({ action: "openExtensionPopup" }).then(res => {
       if (!res || !res.success) {
         chrome.runtime.sendMessage({ action: "openPopupTab" });
@@ -2874,70 +2862,26 @@ async function showTray(caps, llmEnabled) {
 
   // Load LLM states & provider configuration
   let extractedData = null;
-  let currentProvider = "groq";
 
-  const stored = await chrome.storage.local.get(["apiKeys", "lastProvider", "llmEnabled"]);
-  if (stored.lastProvider) currentProvider = stored.lastProvider;
-  
-  const pvtBtns = tray.querySelectorAll('.cep-pvt');
-  pvtBtns.forEach(btn => {
-    btn.classList.toggle('cep-pvt-sel', btn.dataset.prov === currentProvider);
-    btn.onclick = () => {
-      setProvider(btn.dataset.prov);
-    };
-  });
-
-  function setProvider(prov) {
-    currentProvider = prov;
-    pvtBtns.forEach(btn => btn.classList.toggle('cep-pvt-sel', btn.dataset.prov === prov));
-    chrome.storage.local.set({ lastProvider: prov });
-    updateProviderBadge();
-    chrome.storage.local.get(["apiKeys"], r => {
-      el('cep-apiKeyInput').value = r.apiKeys?.[currentProvider] || "";
-    });
-  }
+  const stored = await chrome.storage.local.get(["lastProvider", "llmEnabled"]);
+  const currentProvider = stored.lastProvider || "groq";
 
   function updateProviderBadge() {
     const on = el('cep-llmEnabled').checked;
     el('cep-llmProviderBadge').textContent = on ? currentProvider : "";
   }
 
-  if (stored.apiKeys?.[currentProvider]) {
-    el('cep-apiKeyInput').value = stored.apiKeys[currentProvider];
-  }
-
   // Restore LLM enabled state
   if (stored.llmEnabled) {
     el('cep-llmEnabled').checked = true;
-    el('cep-llmSection').classList.add('cep-expanded');
-    el('cep-llmBody').style.display = 'block';
     updateProviderBadge();
   }
 
   // LLM toggle checkbox listener
   el('cep-llmEnabled').onchange = () => {
     const on = el('cep-llmEnabled').checked;
-    el('cep-llmSection').classList.toggle('cep-expanded', on);
-    el('cep-llmBody').style.display = on ? 'block' : 'none';
     chrome.storage.local.set({ llmEnabled: on });
     updateProviderBadge();
-  };
-
-  // API Key show/hide
-  el('cep-toggleKey').onclick = () => {
-    const inp = el('cep-apiKeyInput');
-    const show = inp.type === 'password';
-    inp.type = show ? 'text' : 'password';
-    el('cep-toggleKey').textContent = show ? 'hide' : 'show';
-  };
-
-  // API Key key change listener
-  el('cep-apiKeyInput').onchange = async () => {
-    const key = el('cep-apiKeyInput').value.trim();
-    const r = await chrome.storage.local.get(["apiKeys"]);
-    const keys = r.apiKeys || {};
-    keys[currentProvider] = key;
-    await chrome.storage.local.set({ apiKeys: keys });
   };
 
   // Section 1: Extraction Flow
@@ -2950,10 +2894,12 @@ async function showTray(caps, llmEnabled) {
     el('cep-fileItems').innerHTML = "";
 
     const useLLM = el('cep-llmEnabled').checked;
-    const apiKey = el('cep-apiKeyInput').value.trim();
+    const storageData = await chrome.storage.local.get(["apiKeys", "lastProvider"]);
+    const prov = storageData.lastProvider || "groq";
+    const apiKey = storageData.apiKeys?.[prov] || "";
 
     if (useLLM && !apiKey) {
-      showStatus("cep-extractStatus", "err", "LLM is enabled — paste an API key first.");
+      showStatus("cep-extractStatus", "err", `LLM is enabled — please configure your ${prov} API key in the extension popup first.`);
       return null;
     }
 
@@ -2974,10 +2920,10 @@ async function showTray(caps, llmEnabled) {
 
       let refinedText = null;
       if (useLLM && hasAssistant) {
-        showStatus("cep-extractStatus", "info", `<span class="cep-spin"></span>Extracting… then refining with ${currentProvider}…`);
+        showStatus("cep-extractStatus", "info", `<span class="cep-spin"></span>Extracting… then refining with ${prov}…`);
         try {
           const chatText = cleanForLLM(buildPlainText(extractedData));
-          const r2 = await chrome.runtime.sendMessage({ action: "llmRefine", provider: currentProvider, apiKey, chatText, capsuleName });
+          const r2 = await chrome.runtime.sendMessage({ action: "llmRefine", provider: prov, apiKey, chatText, capsuleName });
           if (r2.error) throw new Error(r2.error);
           refinedText = r2.text;
         } catch(e) {
