@@ -539,8 +539,9 @@ async function extractImages(turn, idMap = {}) {
     }
 
     // 3b. Skip PDF/document page previews
+    const parentPage = img.closest('[data-testid^="page-"]');
     const isPagePreview = /^page-\d+\./i.test(alt) || 
-                          img.closest('[data-testid^="page-"]:not([data-testid="page-header"])') || 
+                          (parentPage && parentPage.getAttribute('data-testid') !== 'page-header') || 
                           sl.includes('/preview');
     if (isPagePreview) {
       console.log('[CEP] Skipped PDF/document page preview image:', alt, src);
@@ -856,7 +857,7 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
     // --- TEXT-BASED FALLBACK FOR CLAUDE IN-TURN FILES ---
     // If a file from the store is mentioned in this turn's text but wasn't found by the chip selector
     // (e.g. PDF rendered as pages), we match it directly from the store!
-    const turnText = turn.innerText || '';
+    const turnTextLower = (turn.innerText || '').toLowerCase();
     for (const [k, v] of Object.entries(store || {})) {
       if (consumedStore.has(v)) continue;
       if (!v.filename) continue;
@@ -865,9 +866,7 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
       if (isUINoiseFileName(cleanName) || seen.has(cleanName.toLowerCase())) continue;
       
       // If the turn's text contains the clean filename (case insensitive)
-      const escapedName = cleanName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-      const nameRegex = new RegExp(escapedName, 'i');
-      if (nameRegex.test(turnText)) {
+      if (turnTextLower.includes(cleanName.toLowerCase())) {
         console.log('[CEP] Matched store file to Claude turn by text content:', cleanName);
         consumedStore.add(v);
         
