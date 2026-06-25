@@ -35,7 +35,14 @@ async function init() {
     updateProviderBadge();
   }
 
-  renderCapsuleList();
+  if (location.hash === "#tab-capsules") {
+    const capsulesTab = document.querySelector('.tab[data-tab="capsules"]');
+    if (capsulesTab) {
+      capsulesTab.click();
+    }
+  } else {
+    renderCapsuleList();
+  }
 }
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────

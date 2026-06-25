@@ -1808,23 +1808,37 @@ function injectStyles() {
       box-shadow: 0 0 0 3px rgba(124,106,247,0.2);
     }
     #cep-tray {
+      --cep-bg:#0f0f10;
+      --cep-s1:#1a1a1e;
+      --cep-s2:#232328;
+      --cep-s3:#2a2a30;
+      --cep-b:rgba(255,255,255,0.08);
+      --cep-b2:rgba(255,255,255,0.14);
+      --cep-t:#f0eff4;
+      --cep-t2:#9997a8;
+      --cep-t3:#55536a;
+      --cep-acc:#7c6af7;
+      --cep-acc2:#5d9cf5;
+      --cep-green:#3ecf8e;
+      --cep-red:#f87171;
+      --cep-amber:#f59e0b;
+      --cep-r:10px;
+
       position: fixed;
       bottom: 80px;
       right: 20px;
       z-index: 999999;
-      width: 300px;
-      max-height: 520px;
-      background: rgba(13,13,15,0.92);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid rgba(255,255,255,0.09);
-      border-radius: 18px;
-      overflow: hidden;
+      width: 340px;
+      max-height: 600px;
+      background: var(--cep-bg);
+      border: 1px solid var(--cep-b);
+      border-radius: 14px;
       box-shadow: 0 16px 48px rgba(0,0,0,0.6), 0 0 20px rgba(124,106,247,0.12);
       font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+      font-size: 12.5px;
       display: flex;
       flex-direction: column;
-      color: #f0eff4;
+      color: var(--cep-t);
       animation: cepSlideIn 0.18s ease;
     }
     @keyframes cepSlideIn {
@@ -1832,16 +1846,42 @@ function injectStyles() {
       to   { opacity: 1; transform: translateY(0)   scale(1);    }
     }
     #cep-th {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--cep-b);
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      padding: 13px 16px 12px;
-      background: rgba(22,22,26,0.6);
-      border-bottom: 1px solid rgba(255,255,255,0.06);
+      justify-content: space-between;
+      background: var(--cep-s1);
+    }
+    .cep-logo-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .cep-logo-symbol {
+      width: 26px;
+      height: 26px;
+      border-radius: 7px;
+      background: linear-gradient(135deg,var(--cep-acc),var(--cep-acc2));
+      display: flex;
+      align-items: center;
+      justify-content: center;
       font-size: 13px;
-      font-weight: 700;
-      color: #c4bbff;
-      letter-spacing: 0.01em;
+      font-weight: bold;
+      color: #fff;
+    }
+    .cep-hdr-info h1 {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: -0.2px;
+      margin: 0;
+      line-height: 1.2;
+    }
+    .cep-hdr-info p {
+      font-size: 10px;
+      color: var(--cep-t2);
+      margin: 0;
+      line-height: 1.2;
     }
     #cep-tc {
       background: none;
@@ -1859,141 +1899,571 @@ function injectStyles() {
     #cep-tc:hover { background: rgba(255,255,255,0.1); color: #fff; }
 
     /* ── Tabs ── */
-    #cep-tabs {
+    .cep-tabs {
       display: flex;
-      border-bottom: 1px solid rgba(255,255,255,0.06);
-      background: rgba(18,18,22,0.5);
+      border-bottom: 1px solid var(--cep-b);
+      background: var(--cep-s1);
     }
     .cep-tab {
       flex: 1;
       padding: 9px 0;
-      border: none;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--cep-t3);
       background: none;
-      color: #666;
+      border: none;
+      cursor: pointer;
+      letter-spacing: 0.2px;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+      text-align: center;
+    }
+    .cep-tab.cep-tab-active {
+      color: var(--cep-t);
+      border-bottom-color: var(--cep-acc);
+    }
+    .cep-tab:hover:not(.cep-tab-active) {
+      color: var(--cep-t2);
+    }
+
+    .cep-panel {
+      display: none;
+      padding: 12px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .cep-panel.cep-panel-active {
+      display: block;
+    }
+
+    .cep-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.7px;
+      text-transform: uppercase;
+      color: var(--cep-t3);
+      margin-bottom: 7px;
+    }
+
+    .cep-btn {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: var(--cep-r);
+      cursor: pointer;
+      font-size: 12.5px;
+      font-weight: 600;
+      letter-spacing: -0.2px;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .cep-btn:active {
+      transform: scale(0.98);
+    }
+    .cep-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .cep-btn-primary {
+      background: linear-gradient(135deg,var(--cep-acc),var(--cep-acc2));
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(124,106,247,0.3);
+    }
+
+    .cep-status {
+      margin-top: 10px;
+      padding: 9px 12px;
+      border-radius: 8px;
+      font-size: 11.5px;
+      line-height: 1.5;
+      border: 1px solid transparent;
+    }
+    .cep-status.info {
+      background: rgba(124,106,247,0.1);
+      color: #a99cf9;
+      border-color: rgba(124,106,247,0.2);
+    }
+    .cep-status.ok {
+      background: rgba(62,207,142,0.1);
+      color: var(--cep-green);
+      border-color: rgba(62,207,142,0.2);
+    }
+    .cep-status.err {
+      background: rgba(248,113,113,0.1);
+      color: var(--cep-red);
+      border-color: rgba(248,113,113,0.2);
+    }
+    .cep-status.warn {
+      background: rgba(245,158,11,0.1);
+      color: var(--cep-amber);
+      border-color: rgba(245,158,11,0.2);
+    }
+
+    .cep-llm-section {
+      background: var(--cep-s1);
+      border: 1px solid var(--cep-b);
+      border-radius: var(--cep-r);
+      padding: 10px;
+      margin-bottom: 12px;
+    }
+    .cep-llm-section-hdr {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .cep-llm-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
       font-size: 12px;
       font-weight: 600;
       cursor: pointer;
+      user-select: none;
+      color: var(--cep-t2);
+    }
+    .cep-llm-toggle input[type=checkbox] {
+      accent-color: var(--cep-acc);
+      width: 14px;
+      height: 14px;
+      cursor: pointer;
+    }
+    .cep-provider-tabs {
+      display: flex;
+      gap: 5px;
+      margin-top: 10px;
+      margin-bottom: 10px;
+    }
+    .cep-pvt {
+      flex: 1;
+      padding: 6px;
+      border-radius: 8px;
+      background: var(--cep-s2);
+      border: 1px solid var(--cep-b);
+      color: var(--cep-t3);
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      text-align: center;
       transition: all 0.15s;
-      border-bottom: 2px solid transparent;
+    }
+    .cep-pvt.cep-pvt-sel {
+      border-color: var(--cep-acc);
+      color: var(--cep-acc);
+      background: rgba(124,106,247,0.08);
+    }
+    .cep-key-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .cep-key-row input {
+      flex: 1;
+      padding: 7px 10px;
+      background: var(--cep-s2);
+      border: 1px solid var(--cep-b);
+      border-radius: 8px;
+      color: var(--cep-t);
+      font-size: 12px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .cep-key-row input:focus {
+      border-color: var(--cep-acc);
+    }
+    .cep-key-show {
+      padding: 6px 8px;
+      background: none;
+      border: 1px solid var(--cep-b);
+      border-radius: 6px;
+      color: var(--cep-t3);
+      cursor: pointer;
+      font-size: 10px;
+      white-space: nowrap;
+    }
+    .cep-key-show:hover {
+      color: var(--cep-t);
+    }
+
+    .cep-capsule-name-row input {
+      width: 100%;
+      padding: 8px 10px;
+      background: var(--cep-s1);
+      border: 1px solid var(--cep-b);
+      border-radius: 8px;
+      color: var(--cep-t);
+      font-size: 12px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .cep-capsule-name-row input:focus {
+      border-color: var(--cep-acc);
+    }
+
+    .cep-teleport-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .cep-tport-btn {
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--cep-b);
+      color: var(--cep-t);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: var(--cep-s1);
+      transition: all 0.2s;
+    }
+    .cep-tport-btn:active {
+      transform: scale(0.96);
+    }
+    .cep-tport-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+    .cep-tport-btn.claude:hover:not(:disabled) {
+      border-color: #f0a070;
+      background: rgba(240, 160, 112, 0.08);
+    }
+    .cep-tport-btn.chatgpt:hover:not(:disabled) {
+      border-color: var(--cep-green);
+      background: rgba(62, 207, 142, 0.08);
+    }
+    .cep-tport-btn.gemini:hover:not(:disabled) {
+      border-color: #8ab4f8;
+      background: rgba(138, 180, 248, 0.08);
+    }
+    .cep-tport-btn.grok:hover:not(:disabled) {
+      border-color: #fff;
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .cep-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+      margin: 12px 0;
+    }
+    .cep-stat {
+      background: var(--cep-s1);
+      border: 1px solid var(--cep-b);
+      border-radius: 8px;
+      padding: 8px;
       text-align: center;
     }
-    .cep-tab:hover { color: #aaa; }
-    .cep-tab-active {
-      color: #c4bbff;
-      border-bottom-color: #7c6af7;
-    }
-    .cep-tab-panel {
-      padding: 14px;
-    }
-
-    /* ── Extract panel ── */
-    #cep-ext-btn {
-      width: 100%;
-      padding: 10px 14px;
-      border: none;
-      border-radius: 11px;
-      background: linear-gradient(135deg, #7c6af7 0%, #a99cf9 100%);
-      color: #fff;
-      font-size: 12.5px;
+    .cep-stat .cep-v {
+      font-size: 16px;
       font-weight: 700;
-      cursor: pointer;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      gap: 7px;
-      box-shadow: 0 4px 14px rgba(124,106,247,0.35);
-      transition: all 0.2s ease;
-      letter-spacing: 0.01em;
     }
-    #cep-ext-btn:hover { transform: translateY(-1px); box-shadow: 0 7px 20px rgba(124,106,247,0.45); }
-    #cep-ext-btn:disabled { background: #252530; color: #555; cursor: not-allowed; transform: none; box-shadow: none; }
+    .cep-stat .cep-k {
+      font-size: 9.5px;
+      color: var(--cep-t3);
+      margin-top: 1px;
+    }
 
-    /* ── LLM Toggle ── */
-    #cep-llm-row {
+    .cep-file-list {
+      margin-top: 10px;
+      background: var(--cep-s1);
+      border: 1px solid var(--cep-b);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .cep-file-list-hdr {
+      padding: 7px 10px;
+      border-bottom: 1px solid var(--cep-b);
+      font-size: 11px;
+      color: var(--cep-t2);
+    }
+    .cep-file-item {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      padding: 12px 2px 6px;
-      font-size: 11.5px;
-      color: #888;
+      gap: 8px;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--cep-b);
+      font-size: 11px;
     }
-    #cep-llm-row span { font-size: 11.5px; }
-    .cep-toggle {
-      position: relative;
-      display: inline-block;
-      width: 36px;
-      height: 20px;
+    .cep-file-item.clickable:hover {
+      background: var(--cep-s2);
+      cursor: pointer;
+    }
+    .cep-file-item.clickable:hover .cep-file-name {
+      color: var(--cep-t);
+    }
+    .cep-file-item:last-child {
+      border-bottom: none;
+    }
+    .cep-file-icon {
+      font-size: 13px;
       flex-shrink: 0;
     }
-    .cep-toggle input { opacity: 0; width: 0; height: 0; }
-    .cep-toggle-track {
-      position: absolute;
-      cursor: pointer;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: #333;
-      border-radius: 20px;
-      transition: background 0.25s;
+    .cep-file-name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--cep-t2);
     }
-    .cep-toggle-track:before {
-      content: '';
-      position: absolute;
-      height: 14px;
-      width: 14px;
-      left: 3px;
-      bottom: 3px;
-      background: #666;
-      border-radius: 50%;
-      transition: transform 0.25s, background 0.25s;
+    .cep-file-badge {
+      font-size: 9px;
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-weight: 600;
     }
-    .cep-toggle input:checked + .cep-toggle-track { background: rgba(124,106,247,0.4); }
-    .cep-toggle input:checked + .cep-toggle-track:before {
-      transform: translateX(16px);
-      background: #a99cf9;
+    .cep-file-badge.ok {
+      background: rgba(62, 207, 142, 0.15);
+      color: var(--cep-green);
+    }
+    .cep-file-badge.chip {
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--cep-amber);
     }
 
-    /* ── Extract info ── */
-    #cep-extract-info {
+    .cep-img-preview {
       margin-top: 10px;
-      padding: 10px 12px;
-      background: rgba(22,22,28,0.4);
-      border-radius: 10px;
-      border: 1px solid rgba(255,255,255,0.04);
+      background: var(--cep-s1);
+      border: 1px solid var(--cep-b);
+      border-radius: 8px;
+      overflow: hidden;
     }
-    .cep-info-item {
+    .cep-img-preview-hdr {
+      padding: 7px 10px;
+      border-bottom: 1px solid var(--cep-b);
       font-size: 11px;
-      color: #777;
-      padding: 3px 0;
+      color: var(--cep-t2);
+      display: flex;
+      justify-content: space-between;
     }
-    .cep-info-item strong { color: #bbb; }
-
-    /* ── Capsules panel ── */
-    #cep-tab-capsules .cep-tab-panel,
-    #cep-tab-capsules { padding: 0; }
-    #cep-tl {
+    .cep-img-grid {
+      display: grid;
+      grid-template-columns: repeat(5,1fr);
+      gap: 4px;
+      padding: 7px;
+      max-height: 100px;
       overflow-y: auto;
-      padding: 0 10px 12px;
+    }
+    .cep-img-thumb {
+      aspect-ratio: 1;
+      border-radius: 5px;
+      overflow: hidden;
+      border: 1px solid var(--cep-b);
+      cursor: pointer;
+    }
+    .cep-img-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .cep-actgrid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-top: 2px;
+    }
+    .cep-abtn {
+      padding: 8px 10px;
+      background: var(--cep-s1);
+      border: 1px solid var(--cep-b);
+      color: var(--cep-t);
+      font-size: 11.5px;
+      cursor: pointer;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background 0.15s;
+    }
+    .cep-abtn:hover {
+      background: var(--cep-s2);
+    }
+    .cep-abtn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* Capsules list styling */
+    .cep-cap-toolbar {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+      padding: 0 10px 4px;
+    }
+    .cep-cap-search {
+      flex: 1;
+      padding: 7px 10px;
+      background: var(--cep-s1);
+      border: 1px solid var(--cep-b);
+      border-radius: 8px;
+      color: var(--cep-t);
+      font-size: 12px;
+      outline: none;
+    }
+    .cep-cap-search:focus {
+      border-color: var(--cep-acc);
+    }
+    .cep-cap-list {
       display: flex;
       flex-direction: column;
       gap: 6px;
+      max-height: 400px;
+      overflow-y: auto;
+      padding: 0 10px 10px;
+    }
+    .cep-cap-card {
+      background: var(--cep-s1);
+      border: 1px solid var(--cep-b);
+      border-radius: 10px;
+      padding: 10px 12px;
+      transition: all 0.15s;
+      position: relative;
+    }
+    .cep-cap-card:hover {
+      background: var(--cep-s2);
+      border-color: var(--cep-b2);
+    }
+    .cep-cap-name {
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--cep-t);
+      text-align: left;
+    }
+    .cep-cap-meta {
+      font-size: 10px;
+      color: var(--cep-t3);
+      margin-top: 3px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .cep-cap-actions {
+      display: flex;
+      gap: 4px;
+      margin-top: 8px;
+    }
+    .cep-cap-act {
       flex: 1;
-    }
-    #cep-tl::-webkit-scrollbar { width: 4px; }
-    #cep-tl::-webkit-scrollbar-thumb { background: rgba(124,106,247,0.3); border-radius: 4px; }
-    .cep-cap {
-      background: rgba(22,22,28,0.5);
-      border: 1px solid rgba(255,255,255,0.055);
-      border-radius: 11px;
-      padding: 11px 12px;
+      padding: 5px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 500;
       cursor: pointer;
-      transition: all 0.18s ease;
+      border: 1px solid var(--cep-b);
+      background: var(--cep-s2);
+      color: var(--cep-t2);
+      text-align: center;
+      transition: all 0.12s;
     }
-    .cep-cap:hover {
-      background: rgba(32,32,42,0.7);
-      border-color: rgba(124,106,247,0.38);
-      transform: translateX(2px);
+    .cep-cap-act:hover {
+      color: var(--cep-t);
+      border-color: var(--cep-b2);
     }
-    .cep-cn { font-size: 12px; font-weight: 600; color: #f0eff4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .cep-cm { font-size: 10px; color: #777; margin-top: 4px; display: flex; gap: 10px; }
+    .cep-cap-act.cep-drop {
+      background: rgba(124,106,247,0.12);
+      border-color: rgba(124,106,247,0.35);
+      color: var(--cep-acc);
+    }
+    .cep-cap-act.cep-drop:hover {
+      background: rgba(124,106,247,0.2);
+    }
+    .cep-cap-act.cep-del {
+      color: var(--cep-red);
+      border-color: rgba(248,113,113,0.2);
+    }
+    .cep-cap-act.cep-del:hover {
+      background: rgba(248,113,113,0.1);
+    }
+    .cep-cap-empty {
+      color: var(--cep-t3);
+      font-size: 12px;
+      text-align: center;
+      padding: 30px 0;
+    }
+    .cep-spin {
+      display: inline-block;
+      width: 11px;
+      height: 11px;
+      border: 2px solid rgba(255,255,255,0.2);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: cepSp 0.5s linear infinite;
+      vertical-align: middle;
+      margin-right: 5px;
+    }
+    .cep-llm-section-body {
+      display: none;
+    }
+    .cep-llm-section.cep-expanded .cep-llm-section-body {
+      display: block;
+    }
+    .cep-btn-secondary {
+      background: var(--cep-s1);
+      border: 1px solid var(--cep-b);
+      color: var(--cep-t);
+    }
+    .cep-btn-secondary:hover {
+      background: var(--cep-s2);
+    }
+    .cep-section {
+      border-bottom: 1px solid var(--cep-b);
+      padding: 14px 12px;
+    }
+    .cep-section:last-child {
+      border-bottom: none;
+    }
+    .cep-section-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--cep-t2);
+      margin-bottom: 10px;
+    }
+    .cep-plat {
+      margin-left: auto;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: .5px;
+      padding: 3px 8px;
+      border-radius: 20px;
+      border: 1px solid var(--cep-b);
+      color: var(--cep-t3);
+      text-transform: uppercase;
+      margin-right: 10px;
+    }
+    .cep-plat.claude {
+      color: #f0a070;
+      border-color: rgba(240, 160, 112, .3);
+      background: rgba(240, 160, 112, .07);
+    }
+    .cep-plat.chatgpt {
+      color: var(--cep-green);
+      border-color: rgba(62, 207, 142, .3);
+      background: rgba(62, 207, 142, .07);
+    }
+    .cep-plat.gemini {
+      color: #3f8ef6;
+      border-color: rgba(63, 142, 246, .3);
+      background: rgba(63, 142, 246, .07);
+    }
+    .cep-plat.grok {
+      color: #faf9f5;
+      border-color: rgba(250, 249, 245, .3);
+      background: rgba(250, 249, 245, .07);
+    }
+    @keyframes cepSp {
+      to { transform: rotate(360deg); }
+    }
     .cep-toast {
       position: fixed;
       bottom: 24px;
@@ -2009,16 +2479,6 @@ function injectStyles() {
       animation: cepU 2.5s ease forwards;
       pointer-events: none;
     }
-    .cep-spin {
-      display: inline-block;
-      width: 12px;
-      height: 12px;
-      border: 2px solid rgba(255,255,255,0.3);
-      border-radius: 50%;
-      border-top-color: #fff;
-      animation: cepSpin 0.6s linear infinite;
-    }
-    @keyframes cepSpin { to { transform: rotate(360deg); } }
     @keyframes cepU {
       0%   { opacity: 0; transform: translateX(-50%) translateY(10px); }
       15%  { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -2036,12 +2496,10 @@ async function toggleTray() {
     document.getElementById('cep-launcher')?.classList.remove('cep-open');
   } else {
     try {
-      const res = await chrome.storage.local.get(["capsules", "llmEnabled"]);
-      showTray(res.capsules || [], res.llmEnabled || false);
+      await showTray();
       document.getElementById('cep-launcher')?.classList.add('cep-open');
     } catch (e) {
-      console.error("[CEP] Error loading capsules:", e);
-      showTray([], false);
+      console.error("[CEP] Error opening tray:", e);
     }
   }
 }
@@ -2173,151 +2631,535 @@ function initLauncher() {
   wrapper.appendChild(launcher);
 }
 
+// Clean extracted text before sending to LLM for refinement
+function cleanForLLM(rawText) {
+  if (!rawText) return '';
+  let processed = rawText
+    .replace(/\b\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)\b/g, '')
+    .replace(/Claude's response was interrupted\.?/gi, '')
+    .replace(/Claude\s+[Ff]able\s+\d+\s+is\s+currently\s+unavailable\.?\s*Learn\s+more(?:\(opens\s+in\s+new\s+tab\))?/gi, '')
+    .replace(/Claude\s+[Ff]able\s+\d+\s+is\s+currently\s+unavailable\.?\s*Learn\s+more/gi, '')
+    .replace(/Claude is AI and can make mistakes\. Please double-check responses\.?/gi, '')
+    .replace(/You are out of free messages until [0-9: AM|PM|am|pm\s]+Upgrade/gi, '');
+
+  const lines = processed.split('\n');
+  const cleaned = [];
+  const seenBlocks = new Set();
+
+  for (let line of lines) {
+    const t = line.trim();
+    if (!t) continue;
+    if (/^New chat(Ctrl|⌘)/i.test(t)) continue;
+    if (/^(Chats|Projects|Artifacts|Customize|Products|Cowork|Code|Starred)/i.test(t) && t.length > 100) continue;
+    if (/(Free plan|You are out of free messages|Upgrade)/i.test(t) && t.length < 200) continue;
+    if (/^(Upgrade|Learn more|All chats|Download all)$/i.test(t)) continue;
+    if (/Claude.*(unavailable|currently|interrupted)/i.test(t) && t.length < 200) continue;
+    if (/^[a-f0-9]{16,}\.zip/i.test(t) && t.length < 100) continue;
+    if (/^(Done|Content|Script|Table · CSV|PY)$/i.test(t)) continue;
+    if (/^(sasuke|Settings|Language|Get help|Upgrade plan|Log out)/i.test(t) && t.length < 300) continue;
+    if (/^(Add files or photos|Take a screenshot|Add to project|Skills|Add connectors)/i.test(t)) continue;
+    if (/^(Sonnet|Claude|Opus|Haiku|Fable)\s+\d/i.test(t) && t.length < 200) continue;
+    if (/^(Unstar|Star|Rename|Add to project|Delete|Group by)/i.test(t) && t.length < 100) continue;
+    if (/^(Microphone|Hold to record)/i.test(t) && t.length < 100) continue;
+    if (/^(Session|Weekly): \d+%/.test(t)) continue;
+    if (/^(Approximate tokens|Messages sent while cached|5-hour session|7-day usage|Dynamic Context|Bar scale:)/i.test(t)) continue;
+    if (t === '[UNKNOWN]') continue;
+
+    if (t.length > 30) {
+      const blockKey = t.slice(0, 200);
+      if (seenBlocks.has(blockKey)) continue;
+      seenBlocks.add(blockKey);
+    }
+    cleaned.push(line);
+  }
+  return cleaned.join('\n').replace(/\n{4,}/g, '\n\n\n').trim();
+}
+
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+function esc(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+function fmtDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const diff = Date.now() - d.getTime();
+  const m = Math.floor(diff/60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m/60);
+  if (h < 24) return `${h}h ago`;
+  return d.toLocaleDateString();
+}
+
+async function loadCapsules() {
+  const r = await chrome.storage.local.get(["capsules"]);
+  return (r.capsules || []).sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+async function saveCapsule(cap) {
+  const imgCount = (cap.images||[]).filter(i=>i.dataUrl).length;
+  const capSize = JSON.stringify(cap).length;
+  console.log(`[CEP] Saving capsule "${cap.name}": ${imgCount} images, ~${(capSize/1024).toFixed(0)}KB`);
+
+  const r = await chrome.storage.local.get(["capsules"]);
+  const caps = r.capsules || [];
+  caps.push(cap);
+  while (caps.length > 50) caps.shift();
+  try {
+    await chrome.storage.local.set({ capsules: caps });
+    const verify = await chrome.storage.local.get(["capsules"]);
+    const saved = (verify.capsules||[]).find(c => c.id === cap.id);
+    const savedImgs = saved ? (saved.images||[]).filter(i=>i.dataUrl).length : 0;
+    if (savedImgs < imgCount) {
+      console.warn(`[CEP] Storage lost images! Saved ${savedImgs}/${imgCount}. Storage quota may be exceeded.`);
+    }
+  } catch(e) {
+    console.error('[CEP] Storage save failed:', e);
+    cap._imagesStripped = true;
+    const stripped = {...cap, images: []};
+    caps[caps.length - 1] = stripped;
+    await chrome.storage.local.set({ capsules: caps });
+    toast("⚠ Storage full — capsule saved without images. Try deleting old capsules.", true);
+  }
+}
+
+async function deleteCapsule(id) {
+  const r = await chrome.storage.local.get(["capsules"]);
+  const caps = (r.capsules||[]).filter(c => c.id !== id);
+  await chrome.storage.local.set({ capsules: caps });
+}
+
+async function deleteAllCapsules() {
+  await chrome.storage.local.set({ capsules: [] });
+}
+
 function buildPlainText(data) {
   const lines = [`# ${data.platform} Chat — ${data.extractedAt}`, `# ${data.url}`, ""];
   for (const msg of data.messages||[]) {
     if (msg.role && msg.role !== 'unknown') {
       lines.push(`[${msg.role.toUpperCase()}]`);
     }
-    lines.push(msg.text || "");
+    if (msg.text) {
+      const cleaned = cleanForLLM(msg.text);
+      if (cleaned) lines.push(cleaned);
+    }
+    if (msg.images?.length) lines.push(`[${msg.images.length} image(s)]`);
+    if (msg.files?.length)  lines.push(`[Files: ${msg.files.map(f=>f.name).join(", ")}]`);
     lines.push("");
   }
-  return lines.join("\n");
+  return lines.join("\n").replace(/\n{4,}/g, '\n\n\n');
 }
 
-function showTray(caps, llmEnabled) {
+async function showTray(caps, llmEnabled) {
   if (tray) tray.remove();
   tray = document.createElement('div');
   tray.id = 'cep-tray';
 
   tray.innerHTML = `
     <div id="cep-th">
-      <span>⬡ OmniExtract</span>
+      <div class="cep-logo-info">
+        <div class="cep-logo-symbol">⬡</div>
+        <div class="cep-hdr-info">
+          <h1>OmniExtract</h1>
+          <p>Extract · Refine · Drop</p>
+        </div>
+      </div>
+      <span class="cep-plat ${PLAT === 'claude' ? 'claude' : PLAT === 'chatgpt' ? 'chatgpt' : PLAT === 'gemini' ? 'gemini' : PLAT === 'grok' ? 'grok' : ''}" id="cep-platBadge">${PLAT === 'claude' ? 'Claude' : PLAT === 'chatgpt' ? 'ChatGPT' : PLAT === 'gemini' ? 'Gemini' : PLAT === 'grok' ? 'Grok' : '—'}</span>
       <button id="cep-tc">✕</button>
     </div>
-    <div id="cep-tabs">
-      <button class="cep-tab cep-tab-active" data-tab="extract">⚡ Extract</button>
-      <button class="cep-tab" data-tab="capsules">💊 Capsules</button>
-    </div>
-    <div id="cep-tab-extract" class="cep-tab-panel">
-      <button id="cep-ext-btn">⚡ Extract Chat</button>
-      <div id="cep-llm-row">
-        <span>🤖 Auto-refine with LLM</span>
-        <label class="cep-toggle" title="Toggle LLM refinement">
-          <input type="checkbox" id="cep-llm-chk" ${llmEnabled ? 'checked' : ''}>
-          <span class="cep-toggle-track"></span>
-        </label>
+
+    <!-- ── SECTION 1: EXTRACT ── -->
+    <div class="cep-section">
+      <div class="cep-section-title">⚡ Extract Chat</div>
+      
+      <!-- LLM Auto-Refine section (collapsible) -->
+      <div class="cep-llm-section" id="cep-llmSection">
+        <div class="cep-llm-section-hdr">
+          <label class="cep-llm-toggle">
+            <input type="checkbox" id="cep-llmEnabled"> Auto-refine with LLM
+          </label>
+          <span id="cep-llmProviderBadge" style="font-size:10px;color:var(--cep-t3)"></span>
+        </div>
+        <div class="cep-llm-section-body" id="cep-llmBody" style="display:none">
+          <div class="cep-provider-tabs">
+            <button class="cep-pvt" data-prov="groq">⚡ Groq</button>
+            <button class="cep-pvt" data-prov="anthropic">🟠 Anthropic</button>
+            <button class="cep-pvt" data-prov="gemini">✦ Gemini</button>
+          </div>
+          <div class="cep-key-row">
+            <input type="password" id="cep-apiKeyInput" placeholder="Paste API key…" autocomplete="off"/>
+            <button class="cep-key-show" id="cep-toggleKey">show</button>
+          </div>
+        </div>
       </div>
-      <div id="cep-extract-info">
-        <div class="cep-info-item">📍 Platform: <strong>${PLAT}</strong></div>
-        <div class="cep-info-item">📄 Page: <strong>${(document.title || 'Untitled').replace(/ [-|].*$/, '').trim().slice(0,40)}</strong></div>
+
+      <!-- Capsule name -->
+      <div class="cep-capsule-name-row" style="margin-bottom:12px">
+        <input type="text" id="cep-capNameInput" placeholder="Capsule name (auto-filled)…"/>
+      </div>
+
+      <button class="cep-btn cep-btn-primary" id="cep-btnExtract">⬡ Extract + Save Capsule</button>
+      <div class="cep-status" id="cep-extractStatus" style="display:none"></div>
+
+      <!-- Extraction Results -->
+      <div id="cep-extractResults" style="display:none">
+        <div class="cep-stats">
+          <div class="cep-stat"><div class="cep-v" id="cep-sMsg">0</div><div class="cep-k">Messages</div></div>
+          <div class="cep-stat"><div class="cep-v" id="cep-sImg">0</div><div class="cep-k">Images</div></div>
+          <div class="cep-stat"><div class="cep-v" id="cep-sFile">0</div><div class="cep-k">Files</div></div>
+        </div>
+
+        <!-- File list -->
+        <div class="cep-file-list" id="cep-fileList" style="display:none">
+          <div class="cep-file-list-hdr">Attached Files</div>
+          <div id="cep-fileItems"></div>
+        </div>
+
+        <div class="cep-actgrid" style="margin-top:10px">
+          <button class="cep-abtn" id="cep-btnCopy">📋 Copy Text</button>
+          <button class="cep-abtn" id="cep-btnTxt">⬇ Save .txt</button>
+          <button class="cep-abtn" id="cep-btnJson">⬇ Save JSON</button>
+          <button class="cep-abtn" id="cep-btnImgs" disabled>🖼 Save Images</button>
+        </div>
+
+        <div class="cep-img-preview" id="cep-imgPreview" style="display:none">
+          <div class="cep-img-preview-hdr"><span>Images</span><span id="cep-imgPreviewCount" style="color:var(--cep-acc)"></span></div>
+          <div class="cep-img-grid" id="cep-imgGrid"></div>
+        </div>
       </div>
     </div>
-    <div id="cep-tab-capsules" class="cep-tab-panel" style="display:none">
-      <div id="cep-tl"></div>
+
+    <!-- ── SECTION 2: DROP CAPSULE ── -->
+    <div class="cep-section">
+      <div class="cep-section-title">💊 Capsules</div>
+      <button class="cep-btn cep-btn-secondary" id="cep-btnOpenPopup">💊 Open Capsules / Extension UI</button>
+    </div>
+
+    <!-- ── SECTION 3: TELEPORT ── -->
+    <div class="cep-section">
+      <div class="cep-section-title">🚀 Teleport & Send Context</div>
+      <div class="cep-teleport-grid">
+        <button class="cep-tport-btn claude" data-target="claude" title="Teleport to Claude">
+          <span style="font-size:14px">🟠</span> Claude
+        </button>
+        <button class="cep-tport-btn chatgpt" data-target="chatgpt" title="Teleport to ChatGPT">
+          <span style="font-size:14px">🟢</span> ChatGPT
+        </button>
+        <button class="cep-tport-btn gemini" data-target="gemini" title="Teleport to Gemini">
+          <span style="font-size:14px">✦</span> Gemini
+        </button>
+        <button class="cep-tport-btn grok" data-target="grok" title="Teleport to Grok">
+          <span style="font-size:14px">⚡</span> Grok
+        </button>
+      </div>
     </div>
   `;
 
-  injectStyles();
+  const el = id => tray.querySelector('#' + id);
 
-  // Tab switching
-  const tabs = tray.querySelectorAll('.cep-tab');
-  const panels = {
-    extract: tray.querySelector('#cep-tab-extract'),
-    capsules: tray.querySelector('#cep-tab-capsules')
-  };
-  tabs.forEach(tab => {
-    tab.onclick = () => {
-      tabs.forEach(t => t.classList.remove('cep-tab-active'));
-      tab.classList.add('cep-tab-active');
-      Object.values(panels).forEach(p => p.style.display = 'none');
-      panels[tab.dataset.tab].style.display = '';
-    };
-  });
-
-  // LLM toggle handler
-  const llmChk = tray.querySelector('#cep-llm-chk');
-  llmChk.onchange = () => {
-    chrome.storage.local.set({ llmEnabled: llmChk.checked });
-  };
-
-  // Extract button handler
-  const extBtn = tray.querySelector('#cep-ext-btn');
-  extBtn.onclick = async () => {
-    extBtn.disabled = true;
-    extBtn.innerHTML = '<span class="cep-spin"></span> Extracting...';
-    try {
-      const extracted = await extractAll();
-      const capsuleName = (document.title || "Chat").replace(/ [-|].*$/, "").trim().slice(0, 50) || "Chat Capsule";
-      const plainText = buildPlainText(extracted);
-      const useLLM = tray.querySelector('#cep-llm-chk')?.checked || false;
-
-      const cap = {
-        id: Date.now().toString(),
-        name: capsuleName,
-        promptText: plainText,
-        rawText: plainText,
-        images: (extracted.allImages||[]).filter(i=>i.dataUrl),
-        files: (extracted.allFiles||[]),
-        platform: extracted.platform,
-        sourceUrl: extracted.url,
-        createdAt: new Date().toISOString(),
-        llmRefined: false
-      };
-
-      const stored = await chrome.storage.local.get(["capsules"]);
-      const capsList = stored.capsules || [];
-      capsList.push(cap);
-      while (capsList.length > 50) capsList.shift();
-      await chrome.storage.local.set({ capsules: capsList });
-
-      if (useLLM) {
-        toast("⚙️ Extracted! LLM refining in background.");
-      } else {
-        toast("✓ Chat extracted & saved!");
-      }
-      // Switch to capsules tab and refresh
-      showTray(capsList, useLLM);
-      // Auto-switch to capsules tab after extraction
-      setTimeout(() => {
-        const capTab = tray?.querySelector('.cep-tab[data-tab="capsules"]');
-        if (capTab) capTab.click();
-      }, 50);
-    } catch (err) {
-      console.error("[CEP] Inline extraction failed:", err);
-      toast("❌ Extraction failed: " + err.message, true);
-      extBtn.disabled = false;
-      extBtn.innerHTML = '⚡ Extract Chat';
-    }
-  };
-
-  // Capsule list
-  const list = tray.querySelector('#cep-tl');
-  if (!caps.length) {
-    list.innerHTML = '<div style="color:#444;font-size:11.5px;text-align:center;padding:24px 12px">No capsules yet.<br>Go to the Extract tab to save a chat!</div>';
-  } else {
-    [...caps].reverse().forEach(cap => {
-      const el = document.createElement('div');
-      el.className = 'cep-cap';
-      const ic = (cap.images || []).filter(i => i.dataUrl).length;
-      const fc = (cap.files || []).filter(f => f.dataUrl).length;
-      const plat = cap.platform ? `<span>${cap.platform}</span>` : '';
-      el.innerHTML = `<div class="cep-cn">💊 ${eh(cap.name || 'Capsule')}</div><div class="cep-cm"><span>📝 ${cap.promptText ? Math.ceil(cap.promptText.length / 4) + ' tok' : '—'}</span>${ic ? `<span>🖼 ${ic}</span>` : ''}${fc ? `<span>📎 ${fc}</span>` : ''}${plat}</div>`;
-      el.onclick = () => {
-        dropCapsule(cap);
-        tray.remove();
-        tray = null;
-        document.getElementById('cep-launcher')?.classList.remove('cep-open');
-      };
-      list.appendChild(el);
-    });
-  }
-
-  tray.querySelector('#cep-tc').onclick = () => {
+  // Close button
+  el('cep-tc').onclick = () => {
     tray.remove();
     tray = null;
     document.getElementById('cep-launcher')?.classList.remove('cep-open');
   };
+
+  // Section 2: Open capsules UI
+  el('cep-btnOpenPopup').onclick = () => {
+    chrome.runtime.sendMessage({ action: "openExtensionPopup" }).then(res => {
+      if (!res || !res.success) {
+        chrome.runtime.sendMessage({ action: "openPopupTab" });
+      }
+    });
+  };
+
+  // Load LLM states & provider configuration
+  let extractedData = null;
+  let currentProvider = "groq";
+
+  const stored = await chrome.storage.local.get(["apiKeys", "lastProvider", "llmEnabled"]);
+  if (stored.lastProvider) currentProvider = stored.lastProvider;
+  
+  const pvtBtns = tray.querySelectorAll('.cep-pvt');
+  pvtBtns.forEach(btn => {
+    btn.classList.toggle('cep-pvt-sel', btn.dataset.prov === currentProvider);
+    btn.onclick = () => {
+      setProvider(btn.dataset.prov);
+    };
+  });
+
+  function setProvider(prov) {
+    currentProvider = prov;
+    pvtBtns.forEach(btn => btn.classList.toggle('cep-pvt-sel', btn.dataset.prov === prov));
+    chrome.storage.local.set({ lastProvider: prov });
+    updateProviderBadge();
+    chrome.storage.local.get(["apiKeys"], r => {
+      el('cep-apiKeyInput').value = r.apiKeys?.[currentProvider] || "";
+    });
+  }
+
+  function updateProviderBadge() {
+    const on = el('cep-llmEnabled').checked;
+    el('cep-llmProviderBadge').textContent = on ? currentProvider : "";
+  }
+
+  if (stored.apiKeys?.[currentProvider]) {
+    el('cep-apiKeyInput').value = stored.apiKeys[currentProvider];
+  }
+
+  // Restore LLM enabled state
+  if (stored.llmEnabled) {
+    el('cep-llmEnabled').checked = true;
+    el('cep-llmSection').classList.add('cep-expanded');
+    el('cep-llmBody').style.display = 'block';
+    updateProviderBadge();
+  }
+
+  // LLM toggle checkbox listener
+  el('cep-llmEnabled').onchange = () => {
+    const on = el('cep-llmEnabled').checked;
+    el('cep-llmSection').classList.toggle('cep-expanded', on);
+    el('cep-llmBody').style.display = on ? 'block' : 'none';
+    chrome.storage.local.set({ llmEnabled: on });
+    updateProviderBadge();
+  };
+
+  // API Key show/hide
+  el('cep-toggleKey').onclick = () => {
+    const inp = el('cep-apiKeyInput');
+    const show = inp.type === 'password';
+    inp.type = show ? 'text' : 'password';
+    el('cep-toggleKey').textContent = show ? 'hide' : 'show';
+  };
+
+  // API Key key change listener
+  el('cep-apiKeyInput').onchange = async () => {
+    const key = el('cep-apiKeyInput').value.trim();
+    const r = await chrome.storage.local.get(["apiKeys"]);
+    const keys = r.apiKeys || {};
+    keys[currentProvider] = key;
+    await chrome.storage.local.set({ apiKeys: keys });
+  };
+
+  // Section 1: Extraction Flow
+  async function runExtractionFlow(shouldSave = false) {
+    extractedData = null;
+    el('cep-extractResults').style.display = "none";
+    el('cep-imgPreview').style.display = "none";
+    el('cep-fileList').style.display = "none";
+    el('cep-imgGrid').innerHTML = "";
+    el('cep-fileItems').innerHTML = "";
+
+    const useLLM = el('cep-llmEnabled').checked;
+    const apiKey = el('cep-apiKeyInput').value.trim();
+
+    if (useLLM && !apiKey) {
+      showStatus("cep-extractStatus", "err", "LLM is enabled — paste an API key first.");
+      return null;
+    }
+
+    showStatus("cep-extractStatus", "info", '<span class="cep-spin"></span>Extracting chat…');
+    el('cep-btnExtract').disabled = true;
+    tray.querySelectorAll('.cep-tport-btn').forEach(b => b.disabled = true);
+
+    try {
+      const extracted = await extractAll();
+      extractedData = extracted;
+
+      if (!el('cep-capNameInput').value) {
+        el('cep-capNameInput').value = (document.title || "Chat").replace(/ [-|].*$/, "").trim().slice(0, 50);
+      }
+
+      const capsuleName = el('cep-capNameInput').value.trim() || "Chat Capsule";
+      const hasAssistant = (extractedData.messages || []).some(m => m.role === 'assistant');
+
+      let refinedText = null;
+      if (useLLM && hasAssistant) {
+        showStatus("cep-extractStatus", "info", `<span class="cep-spin"></span>Extracting… then refining with ${currentProvider}…`);
+        try {
+          const chatText = cleanForLLM(buildPlainText(extractedData));
+          const r2 = await chrome.runtime.sendMessage({ action: "llmRefine", provider: currentProvider, apiKey, chatText, capsuleName });
+          if (r2.error) throw new Error(r2.error);
+          refinedText = r2.text;
+        } catch(e) {
+          showStatus("cep-extractStatus", "warn", "⚠ LLM refine failed: " + e.message + " — saving raw text.");
+        }
+      }
+
+      let defaultPromptText;
+      if (!hasAssistant) {
+        defaultPromptText = (extractedData.messages || [])
+          .map(m => cleanForLLM(m.text))
+          .filter(Boolean)
+          .join('\n\n');
+      } else {
+        defaultPromptText = buildPlainText(extractedData);
+      }
+
+      const cap = {
+        id: Date.now().toString(),
+        name: capsuleName,
+        promptText: refinedText || defaultPromptText,
+        rawText: buildPlainText(extractedData),
+        images: (extractedData.allImages || []).filter(i => i.dataUrl),
+        files: (extractedData.allFiles || []),
+        platform: extractedData.platform,
+        sourceUrl: extractedData.url,
+        createdAt: new Date().toISOString(),
+        llmRefined: !!refinedText
+      };
+
+      if (shouldSave) {
+        await saveCapsule(cap);
+      }
+
+      renderExtractResults(extractedData, refinedText);
+      return cap;
+
+    } catch(e) {
+      showStatus("cep-extractStatus", "err", "Error: " + e.message);
+      return null;
+    } finally {
+      el('cep-btnExtract').disabled = false;
+      tray.querySelectorAll('.cep-tport-btn').forEach(b => b.disabled = false);
+    }
+  }
+
+  el('cep-btnExtract').onclick = async () => {
+    await runExtractionFlow(true);
+  };
+
+  function renderExtractResults(data, refinedText) {
+    const msgs  = data.messages || [];
+    const imgs  = data.allImages || [];
+    const files = data.allFiles || [];
+
+    el('cep-sMsg').textContent  = msgs.length;
+    el('cep-sImg').textContent  = imgs.length;
+    el('cep-sFile').textContent = files.length;
+
+    // Files
+    if (files.length) {
+      el('cep-fileList').style.display = "block";
+      el('cep-fileItems').innerHTML = "";
+      files.forEach(f => {
+        const ext = f.name.split(".").pop()?.toLowerCase() || "";
+        const icon = ext === "pdf" ? "📄" : ext === "zip" ? "🗜" : ["doc","docx"].includes(ext) ? "📝" : ["xls","xlsx"].includes(ext) ? "📊" : "📎";
+        const hasData = !!f.dataUrl;
+        const div = document.createElement("div");
+        div.className = "cep-file-item" + (hasData ? " clickable" : "");
+        if (hasData) {
+          div.title = "Click to download " + f.name;
+          div.onclick = () => {
+            chrome.runtime.sendMessage({ action: "downloadDataUrl", dataUrl: f.dataUrl, filename: f.name });
+          };
+        }
+        div.innerHTML = `
+          <span class="cep-file-icon">${icon}</span>
+          <span class="cep-file-name" title="${esc(f.name)}">${esc(f.name)}</span>
+          <span class="cep-file-badge ${hasData ? 'ok' : 'chip'}">${hasData ? "✓ data" : "name only"}</span>
+        `;
+        el('cep-fileItems').appendChild(div);
+      });
+    }
+
+    // Images
+    const goodImgs = imgs.filter(i => i.dataUrl);
+    const failedImgs = imgs.filter(i => i.error);
+    if (goodImgs.length) {
+      el('cep-imgPreview').style.display = "block";
+      el('cep-imgPreviewCount').textContent = goodImgs.length + " ready";
+      goodImgs.forEach(img => {
+        const d = document.createElement("div"); d.className = "cep-img-thumb";
+        const imgEl = document.createElement("img"); imgEl.src = img.dataUrl;
+        d.appendChild(imgEl); el('cep-imgGrid').appendChild(d);
+      });
+      el('cep-btnImgs').disabled = false;
+    } else {
+      el('cep-btnImgs').disabled = true;
+    }
+
+    // Status
+    const chipsOnly = files.filter(f => !f.dataUrl).length;
+    let statusParts = [`✓ Capsule saved! ${msgs.length} messages`];
+    if (goodImgs.length) statusParts.push(`${goodImgs.length} image${goodImgs.length>1?"s":""}`);
+    else if (imgs.length) statusParts.push(`0/${imgs.length} images captured`);
+    statusParts.push(`${files.length} file${files.length!==1?"s":""}`);
+    if (refinedText) statusParts.push("LLM refined ✦");
+    let statusMsg = statusParts.join(" · ");
+    const warns = [];
+    if (failedImgs.length) warns.push(`⚠ ${failedImgs.length} image(s) couldn't be fetched (may be expired)`);
+    if (chipsOnly) warns.push(`⚠ ${chipsOnly} file(s) found by name only (no binary available in DOM)`);
+    if (warns.length) statusMsg += "<br>" + warns.join("<br>");
+
+    showStatus("cep-extractStatus", warns.length ? "warn" : "ok", statusMsg);
+    el('cep-extractResults').style.display = "block";
+  }
+
+  function showStatus(id, type, msg) {
+    const statusEl = el(id);
+    statusEl.className = "cep-status " + type;
+    statusEl.innerHTML = msg;
+    statusEl.style.display = "block";
+  }
+
+  // Section 1: Result action buttons
+  el('cep-btnCopy').onclick = async () => {
+    if (!extractedData) return;
+    await navigator.clipboard.writeText(buildPlainText(extractedData));
+    flash(el('cep-btnCopy'), "✓ Copied");
+  };
+
+  el('cep-btnTxt').onclick = () => {
+    if (!extractedData) return;
+    chrome.runtime.sendMessage({ action: "downloadText", text: buildPlainText(extractedData), filename: `chat_${Date.now()}.txt` });
+  };
+
+  el('cep-btnJson').onclick = () => {
+    if (!extractedData) return;
+    chrome.runtime.sendMessage({ action: "downloadJson", json: JSON.stringify(extractedData, null, 2), filename: `chat_${Date.now()}.json` });
+  };
+
+  el('cep-btnImgs').onclick = async () => {
+    if (!extractedData) return;
+    const imgs = (extractedData.allImages || []).filter(i => i.dataUrl);
+    for (let i = 0; i < imgs.length; i++) {
+      await delay(250 * i);
+      const ext = imgs[i].mimeType?.split("/")[1] || "jpg";
+      chrome.runtime.sendMessage({ action: "downloadDataUrl", dataUrl: imgs[i].dataUrl, filename: `img_${i + 1}.${ext}` });
+    }
+    flash(el('cep-btnImgs'), `⬇ Saving ${imgs.length}…`);
+  };
+
+  function flash(buttonEl, msg) {
+    const orig = buttonEl.innerHTML;
+    buttonEl.innerHTML = msg;
+    setTimeout(() => buttonEl.innerHTML = orig, 1800);
+  }
+
+  // Section 3: Teleport Platforms
+  tray.querySelectorAll('.cep-tport-btn').forEach(btn => {
+    btn.onclick = async () => {
+      const target = btn.dataset.target;
+      const cap = await runExtractionFlow(false);
+      if (!cap) return;
+
+      const transfer = {
+        targetPlatform: target,
+        capsule: cap,
+        timestamp: Date.now()
+      };
+      await chrome.storage.local.set({ pending_transfer: transfer });
+
+      const urls = {
+        claude: "https://claude.ai/new",
+        chatgpt: "https://chatgpt.com/",
+        gemini: "https://gemini.google.com/app",
+        grok: "https://grok.com/"
+      };
+      window.open(urls[target], "_blank");
+    };
+  });
+
   document.body.appendChild(tray);
 }
 
@@ -2400,8 +3242,8 @@ chrome.runtime.onMessage.addListener((req,_,send)=>{
   if (req.action==='ping')           {send({platform:PLAT,ready:true});return true;}
   if (req.action==='extract')        {extractAll().then(d=>send({success:true,data:d})).catch(e=>send({success:false,error:e.message}));return true;}
   if (req.action==='showCapsuleTray'){
-    chrome.storage.local.get(['llmEnabled']).then(r => showTray(req.capsules||[], r.llmEnabled||false));
-    send({ok:true});return true;
+    showTray().then(() => send({ok:true}));
+    return true;
   }
   if (req.action==='dropCapsule')    {dropCapsule(req.capsule);send({ok:true});return true;}
   if (req.action==='hideCapsuleTray'){if(tray){tray.remove();tray=null;}send({ok:true});return true;}

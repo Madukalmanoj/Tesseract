@@ -49,6 +49,30 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     });
     return true;
   }
+  if (req.action === "openExtensionPopup") {
+    if (chrome.action && typeof chrome.action.openPopup === "function") {
+      chrome.action.openPopup()
+        .then(() => sendResponse({ success: true }))
+        .catch(e => {
+          console.warn("[CEP] openPopup failed:", e);
+          sendResponse({ success: false, error: e.message });
+        });
+    } else {
+      sendResponse({ success: false, error: "chrome.action.openPopup not supported" });
+    }
+    return true;
+  }
+  if (req.action === "openPopupTab") {
+    chrome.windows.create({
+      url: chrome.runtime.getURL("popup/popup.html#tab-capsules"), // Open directly to capsules tab!
+      type: "popup",
+      width: 380,
+      height: 600
+    }, () => {
+      sendResponse({ success: true });
+    });
+    return true;
+  }
 });
 
 // ── Fetch any URL as base64 ───────────────────────────────────────────────────
