@@ -2908,8 +2908,24 @@ async function showTray(caps, llmEnabled) {
   }
 
   // LLM toggle checkbox listener
-  el('cep-llmEnabled').onchange = () => {
+  el('cep-llmEnabled').onchange = async () => {
     const on = el('cep-llmEnabled').checked;
+    if (on) {
+      const storageData = await chrome.storage.local.get(["apiKeys", "lastProvider"]);
+      const prov = storageData.lastProvider || "groq";
+      const apiKey = storageData.apiKeys?.[prov] || "";
+      if (!apiKey) {
+        el('cep-llmEnabled').checked = false;
+        toast(`⚠️ Please configure your ${prov.toUpperCase()} API key first.`, true);
+        await chrome.storage.local.set({ open_tab: "settings" });
+        chrome.runtime.sendMessage({ action: "openExtensionPopup" }).then(res => {
+          if (!res || !res.success) {
+            chrome.runtime.sendMessage({ action: "openPopupTab" });
+          }
+        });
+        return;
+      }
+    }
     chrome.storage.local.set({ llmEnabled: on });
     updateProviderBadge();
   };

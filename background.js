@@ -63,13 +63,16 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     return true;
   }
   if (req.action === "openPopupTab") {
-    chrome.windows.create({
-      url: chrome.runtime.getURL("popup/popup.html#tab-capsules"), // Open directly to capsules tab!
-      type: "popup",
-      width: 380,
-      height: 600
-    }, () => {
-      sendResponse({ success: true });
+    chrome.storage.local.get(["open_tab"]).then(res => {
+      const hash = res.open_tab ? `#tab-${res.open_tab}` : "";
+      chrome.windows.create({
+        url: chrome.runtime.getURL(`popup/popup.html${hash}`),
+        type: "popup",
+        width: 380,
+        height: 600
+      }, () => {
+        sendResponse({ success: true });
+      });
     });
     return true;
   }

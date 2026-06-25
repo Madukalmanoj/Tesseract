@@ -194,6 +194,7 @@ input:checked + .slider:before{transform:translateX(14px);background-color:#fff}
   <div class="logo">⬡</div>
   <div class="hdr-info"><h1>OmniExtract</h1><p>Extract · Refine · Drop</p></div>
   <span class="plat" id="platBadge">—</span>
+  <button id="btnSettings" title="LLM Settings" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:16px;line-height:1;margin-left:5px;transition:color .15s">⚙️</button>
 </div>
 
 <div class="tabs">
@@ -204,28 +205,15 @@ input:checked + .slider:before{transform:translateX(14px);background-color:#fff}
 <!-- ══════════════════════ EXTRACT TAB ══════════════════════ -->
 <div class="panel active" id="tab-extract">
 
-  <!-- LLM Auto-Refine section (collapsible) -->
-  <div class="llm-section" id="llmSection">
-    <div class="llm-section-hdr">
-      <span style="font-size:12px;font-weight:600;color:var(--t2)">Auto-refine with LLM</span>
-      <div style="display:flex;align-items:center;gap:8px">
-        <span id="llmProviderBadge" style="font-size:10px;color:var(--t3);text-transform:uppercase;font-weight:600"></span>
-        <label class="switch">
-          <input type="checkbox" id="llmEnabled">
-          <span class="slider"></span>
-        </label>
-      </div>
-    </div>
-    <div class="llm-section-body" id="llmBody">
-      <div class="provider-tabs">
-        <button class="pvt sel" data-prov="groq">⚡ Groq</button>
-        <button class="pvt" data-prov="anthropic">🟠 Anthropic</button>
-        <button class="pvt" data-prov="gemini">✦ Gemini</button>
-      </div>
-      <div class="key-row">
-        <input type="password" id="apiKeyInput" placeholder="Paste API key…" autocomplete="off"/>
-        <button class="key-show" id="toggleKey">show</button>
-      </div>
+  <!-- LLM Auto-Refine section (just toggle switch) -->
+  <div class="llm-section" id="llmSection" style="margin-bottom:12px; padding:12px; display:flex; justify-content:space-between; align-items:center">
+    <span style="font-size:12px;font-weight:600;color:var(--t2)">Auto-refine with LLM</span>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span id="llmProviderBadge" style="font-size:10px;color:var(--t3);text-transform:uppercase;font-weight:600"></span>
+      <label class="switch">
+        <input type="checkbox" id="llmEnabled">
+        <span class="slider"></span>
+      </label>
     </div>
   </div>
 
@@ -291,6 +279,24 @@ input:checked + .slider:before{transform:translateX(14px);background-color:#fff}
     <button id="btnClearAll" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:11px;font-weight:600;display:flex;align-items:center;gap:4px">🗑 Delete All</button>
   </div>
   <div class="cap-list" id="capList"></div>
+</div>
+
+<!-- ══════════════════════ SETTINGS TAB ══════════════════════ -->
+<div class="panel" id="tab-settings">
+  <div class="label" style="margin-bottom:12px">LLM Provider Configuration</div>
+  
+  <div class="provider-tabs" style="margin-bottom:12px">
+    <button class="pvt sel" data-prov="groq">⚡ Groq</button>
+    <button class="pvt" data-prov="anthropic">🟠 Anthropic</button>
+    <button class="pvt" data-prov="gemini">✦ Gemini</button>
+  </div>
+  
+  <div class="key-row" style="margin-bottom:16px">
+    <input type="password" id="apiKeyInput" placeholder="Paste API key…" autocomplete="off"/>
+    <button class="key-show" id="toggleKey">show</button>
+  </div>
+  
+  <button class="btn btn-secondary" id="btnBackExtract">Back to Extract</button>
 </div>
 
 <script src="popup.js"></script>

@@ -5,6 +5,13 @@ let currentProvider = "groq";
 
 const $ = id => document.getElementById(id);
 
+function openSettings() {
+  document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+  document.querySelectorAll(".panel").forEach(x => x.classList.remove("active"));
+  $("tab-settings").classList.add("active");
+  $("apiKeyInput").focus();
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -31,11 +38,13 @@ async function init() {
   // Restore LLM enabled state
   if (stored.llmEnabled) {
     $("llmEnabled").checked = true;
-    $("llmSection").classList.add("expanded");
     updateProviderBadge();
   }
 
-  if (stored.open_tab === "capsules") {
+  if (stored.open_tab === "settings") {
+    await chrome.storage.local.remove(["open_tab"]);
+    openSettings();
+  } else if (stored.open_tab === "capsules") {
     await chrome.storage.local.remove(["open_tab"]);
     const capsulesTab = document.querySelector('.tab[data-tab="capsules"]');
     if (capsulesTab) {
@@ -46,6 +55,8 @@ async function init() {
     if (capsulesTab) {
       capsulesTab.click();
     }
+  } else if (location.hash === "#tab-settings") {
+    openSettings();
   } else {
     renderCapsuleList();
   }
@@ -63,11 +74,26 @@ document.querySelectorAll(".tab").forEach(t => {
 });
 
 // ── LLM toggle ────────────────────────────────────────────────────────────────
-$("llmEnabled").addEventListener("change", () => {
+$("llmEnabled").addEventListener("change", async () => {
   const on = $("llmEnabled").checked;
-  $("llmSection").classList.toggle("expanded", on);
+  if (on) {
+    const stored = await chrome.storage.local.get(["apiKeys"]);
+    const key = stored.apiKeys?.[currentProvider] || "";
+    if (!key) {
+      $("llmEnabled").checked = false;
+      openSettings();
+      showStatus("extractStatus", "warn", `Please configure your ${currentProvider} API key to enable LLM auto-refining.`);
+      return;
+    }
+  }
   chrome.storage.local.set({ llmEnabled: on });
   updateProviderBadge();
+});
+
+$("btnSettings").addEventListener("click", openSettings);
+$("btnBackExtract").addEventListener("click", () => {
+  const extractTab = document.querySelector('.tab[data-tab="extract"]');
+  if (extractTab) extractTab.click();
 });
 
 function updateProviderBadge() {
