@@ -306,8 +306,8 @@ async function callGroq(apiKey, system, userMsg) {
   return { text: d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content || "" };
 }
 
-async function callGeminiModel(apiKey, apiVersion, model, system, userMsg) {
-  const res = await fetch("https://generativelanguage.googleapis.com/" + apiVersion + "/models/" + model + ":generateContent?key=" + apiKey, {
+async function callGemini(apiKey, system, userMsg) {
+  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + apiKey, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -322,53 +322,15 @@ async function callGeminiModel(apiKey, apiVersion, model, system, userMsg) {
       ]
     })
   });
-  if (!res.ok) {
-    const text = await res.text();
-    let parsed;
-    try { parsed = JSON.parse(text); } catch(_) {}
-    const msg = parsed?.error?.message || text;
-    throw new Error(apiVersion + "/" + model + " HTTP " + res.status + ": " + msg);
-  }
+  if (!res.ok) throw new Error("Gemini " + res.status + ": " + await res.text());
   const d = await res.json();
+  // Handle safety-blocked or empty responses
   const candidate = d.candidates && d.candidates[0];
-  if (!candidate) throw new Error(apiVersion + "/" + model + " returned no candidates — content may have been blocked.");
-  if (candidate.finishReason === "SAFETY") throw new Error(apiVersion + "/" + model + " blocked this content due to safety filters.");
+  if (!candidate) throw new Error("Gemini returned no candidates — content may have been blocked.");
+  if (candidate.finishReason === "SAFETY") throw new Error("Gemini blocked this content due to safety filters.");
   const text = candidate.content && candidate.content.parts && candidate.content.parts[0] && candidate.content.parts[0].text || "";
-  if (!text) throw new Error(apiVersion + "/" + model + " returned an empty response.");
+  if (!text) throw new Error("Gemini returned an empty response.");
   return { text };
-}
-
-async function callGemini(apiKey, system, userMsg) {
-  const stored = await chrome.storage.local.get("lastSuccessfulGeminiModel");
-  const lastSuccess = stored.lastSuccessfulGeminiModel;
-
-  const attempts = [
-    { version: "v1beta", model: "gemini-2.0-flash" },
-    { version: "v1", model: "gemini-2.0-flash" },
-    { version: "v1", model: "gemini-1.5-flash" },
-    { version: "v1beta", model: "gemini-1.5-flash" }
-  ];
-
-  if (lastSuccess) {
-    const idx = attempts.findIndex(a => a.version === lastSuccess.version && a.model === lastSuccess.model);
-    if (idx !== -1) {
-      attempts.splice(idx, 1);
-    }
-    attempts.unshift(lastSuccess);
-  }
-
-  const errors = [];
-  for (const att of attempts) {
-    try {
-      const res = await callGeminiModel(apiKey, att.version, att.model, system, userMsg);
-      await chrome.storage.local.set({ lastSuccessfulGeminiModel: att });
-      return res;
-    } catch (e) {
-      console.warn("[CEP] Attempt with " + att.version + "/" + att.model + " failed: " + e.message);
-      errors.push(e.message);
-    }
-  }
-  throw new Error("All Gemini attempts failed: " + errors.join(" | "));
 }
 
 async function handleLLMTest({ provider, apiKey }) {
@@ -396,55 +358,15 @@ async function handleLLMTest({ provider, apiKey }) {
     });
     if (!res.ok) throw new Error("Groq " + res.status + ": " + await res.text());
   } else if (provider === "gemini") {
-    const stored = await chrome.storage.local.get("lastSuccessfulGeminiModel");
-    const lastSuccess = stored.lastSuccessfulGeminiModel;
-
-    const attempts = [
-      { version: "v1beta", model: "gemini-2.0-flash" },
-      { version: "v1", model: "gemini-2.0-flash" },
-      { version: "v1", model: "gemini-1.5-flash" },
-      { version: "v1beta", model: "gemini-1.5-flash" }
-    ];
-
-    if (lastSuccess) {
-      const idx = attempts.findIndex(a => a.version === lastSuccess.version && a.model === lastSuccess.model);
-      if (idx !== -1) {
-        attempts.splice(idx, 1);
-      }
-      attempts.unshift(lastSuccess);
-    }
-
-    const errors = [];
-    let success = false;
-    for (const att of attempts) {
-      try {
-        res = await fetch("https://generativelanguage.googleapis.com/" + att.version + "/models/" + att.model + ":generateContent?key=" + apiKey, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ role: "user", parts: [{ text: user }] }],
-            generationConfig: { maxOutputTokens: 1 }
-          })
-        });
-        if (!res.ok) {
-          const text = await res.text();
-          let parsed;
-          try { parsed = JSON.parse(text); } catch(_) {}
-          const msg = parsed?.error?.message || text;
-          throw new Error(att.version + "/" + att.model + " HTTP " + res.status + ": " + msg);
-        }
-        await chrome.storage.local.set({ lastSuccessfulGeminiModel: att });
-        success = true;
-        break;
-      } catch (e) {
-        console.warn("[CEP] Test Gemini with " + att.version + "/" + att.model + " failed: " + e.message);
-        errors.push(e.message);
-      }
-    }
-    if (!success) {
-      throw new Error("All Gemini test attempts failed: " + errors.join(" | "));
-    }
-  }
+    res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + apiKey, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: user }] }],
+        generationConfig: { maxOutputTokens: 1 }
+      })
+    });
+    if (!res.ok) throw new Error("Gemini " + res.status + ": " + await res.text());
   } else {
     throw new Error("Unknown provider");
   }
