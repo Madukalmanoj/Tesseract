@@ -1219,19 +1219,19 @@
               const k = filename.toLowerCase().trim();
               const isClaudeFile = typeof fileId === 'string' && /^[a-f0-9-]{36}$/.test(fileId);
               if (!window.__cep.files[k] && isClaudeFile) {
-                // Timeout fetch helper (5 seconds timeout)
+                // Timeout fetch helper (5 seconds timeout via Promise.race to avoid AbortController signal issues)
                 const fetchWithTimeout = async (url, options = {}) => {
-                  const controller = new AbortController();
-                  const id = setTimeout(() => controller.abort(), 5000);
+                  let timeoutId;
+                  const timeoutPromise = new Promise((_, reject) => {
+                    timeoutId = setTimeout(() => reject(new Error('Timeout')), 5000);
+                  });
                   try {
-                    const response = await _fetch(url, {
-                      ...options,
-                      signal: controller.signal
-                    });
-                    clearTimeout(id);
+                    const fetchPromise = _fetch(url, options);
+                    const response = await Promise.race([fetchPromise, timeoutPromise]);
+                    clearTimeout(timeoutId);
                     return response;
                   } catch (err) {
-                    clearTimeout(id);
+                    clearTimeout(timeoutId);
                     throw err;
                   }
                 };
