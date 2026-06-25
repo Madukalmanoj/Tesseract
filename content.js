@@ -514,16 +514,40 @@ async function extractImages(turn, idMap = {}) {
     const src = resolveImageSrc(img);
     const sl = src.toLowerCase();
 
-    // Skip document previews (PDF, DOCX, ZIP thumbnails, etc.)
+    // Skip document previews (PDF, DOCX, ZIP thumbnails, etc.) and icons
+    const alt = (img.getAttribute('alt') || '').toLowerCase().trim();
+    const className = (img.className && typeof img.className === 'string') ? img.className.toLowerCase() : '';
+    
+    // 1. Skip if alt, class name, or source URL indicates it is an icon
+    if (alt.includes('icon') || className.includes('icon') || sl.includes('icon')) {
+      console.log('[CEP] Skipped icon image:', alt, className, src);
+      continue;
+    }
+
+    // 2. Skip based on alt text ending with non-image file extension (e.g. alt="document.pdf")
+    const nonImageExts = ['.pdf', '.docx', '.doc', '.zip', '.xlsx', '.xls', '.pptx', '.ppt', '.txt', '.csv', '.py', '.json', '.sh', '.js', '.html', '.css', '.md'];
+    if (alt && nonImageExts.some(ext => alt.endsWith(ext))) {
+      console.log('[CEP] Skipped document preview image based on alt text extension:', alt);
+      continue;
+    }
+
+    // 3. Skip if image is inside a file chip/preview container
+    const isInsideFileChip = img.closest('[data-testid="file-thumbnail"], [class*="FilePreview"], [class*="FileChip"], [class*="DocumentChip"], [class*="AttachmentChip"], [class*="file-attachment"], [class*="uploaded-file"]');
+    if (isInsideFileChip) {
+      console.log('[CEP] Skipped document preview image inside file chip:', src);
+      continue;
+    }
+
+    // 4. UUID-based skip fallback (using idMap)
     const uuidMatch = src.match(/\/files\/([a-f0-9-]{36})/);
     if (uuidMatch) {
       const fileId = uuidMatch[1];
       const mappedName = idMap[fileId];
       if (mappedName) {
         const ext = mappedName.split('.').pop()?.toLowerCase();
-        const nonImageExts = ['pdf', 'docx', 'doc', 'zip', 'xlsx', 'xls', 'pptx', 'ppt', 'txt', 'csv', 'py', 'json', 'sh', 'js', 'html', 'css', 'md'];
-        if (nonImageExts.includes(ext)) {
-          console.log('[CEP] Skipped document preview image:', mappedName);
+        const nonImageExtsList = ['pdf', 'docx', 'doc', 'zip', 'xlsx', 'xls', 'pptx', 'ppt', 'txt', 'csv', 'py', 'json', 'sh', 'js', 'html', 'css', 'md'];
+        if (nonImageExtsList.includes(ext)) {
+          console.log('[CEP] Skipped document preview image via UUID match:', mappedName);
           continue;
         }
       }
@@ -1296,61 +1320,65 @@ async function extractAll() {
   }
 
   // Add any generic/unconsumed store files that were not matched to any DOM chip
-  for (const [k, v] of Object.entries(store || {})) {
-    if (consumedStore.has(v)) continue;
-    if (!v.filename) continue;
+  // Skip this fallback loop for ChatGPT and Claude because they have reliable DOM chips
+  // and we don't want to leak historical files from other chats/turns.
+  if (PLAT !== 'claude' && PLAT !== 'chatgpt') {
+    for (const [k, v] of Object.entries(store || {})) {
+      if (consumedStore.has(v)) continue;
+      if (!v.filename) continue;
 
-    // On Gemini, skip generic "file" or "file.txt" entries from the intercepted store
-    // These are metadata artifacts, not actual user files
-    if (PLAT === 'gemini') {
-      const fn = v.filename.toLowerCase().trim();
-      if (fn === 'file' || fn === 'file.txt' || fn === 'upload' || fn === 'blob') {
-        console.log('[CEP] Skipping generic Gemini store entry:', v.filename);
-        continue;
-      }
-    }
-
-    let mime = (v.mimeType || '').toLowerCase();
-    let filename = v.filename;
-    let isImage = mime.startsWith('image/') || /\.(png|jpe?g|webp|gif)$/i.test(filename);
-    
-    // Attempt magic number recovery if not already known image
-    if (!isImage && v.dataUrl) {
-      const detectedMime = detectImageMime(v.dataUrl);
-      if (detectedMime) {
-        mime = detectedMime;
-        isImage = true;
-        // Rename if extension is .bin or missing
-        const ext = detectedMime.split('/')[1];
-        if (filename.toLowerCase().endsWith('.bin')) {
-          filename = filename.slice(0, -4) + '.' + (ext === 'jpeg' ? 'jpg' : ext);
-        } else if (!filename.includes('.')) {
-          filename = filename + '.' + (ext === 'jpeg' ? 'jpg' : ext);
+      // On Gemini, skip generic "file" or "file.txt" entries from the intercepted store
+      // These are metadata artifacts, not actual user files
+      if (PLAT === 'gemini') {
+        const fn = v.filename.toLowerCase().trim();
+        if (fn === 'file' || fn === 'file.txt' || fn === 'upload' || fn === 'blob') {
+          console.log('[CEP] Skipping generic Gemini store entry:', v.filename);
+          continue;
         }
-        console.log(`[CEP] Recovered image from binary data: ${v.filename} -> ${filename} (${detectedMime})`);
       }
-    }
 
-    if (isImage) {
-      // Add to allImages if not already present
-      const srcUrl = v.url || filename;
-      result.allImages.push({
-        src: srcUrl,
-        dataUrl: v.dataUrl,
-        mimeType: mime,
-        size: v.size || (v.dataUrl ? Math.round(v.dataUrl.split(',')[1].length * 0.75) : 0),
-        alt: filename
-      });
-    } else {
-      result.allFiles.push({
-        name: filename,
-        dataUrl: v.dataUrl,
-        mimeType: mime,
-        source: 'intercepted-fallback',
-        note: '✓ data'
-      });
+      let mime = (v.mimeType || '').toLowerCase();
+      let filename = v.filename;
+      let isImage = mime.startsWith('image/') || /\.(png|jpe?g|webp|gif)$/i.test(filename);
+      
+      // Attempt magic number recovery if not already known image
+      if (!isImage && v.dataUrl) {
+        const detectedMime = detectImageMime(v.dataUrl);
+        if (detectedMime) {
+          mime = detectedMime;
+          isImage = true;
+          // Rename if extension is .bin or missing
+          const ext = detectedMime.split('/')[1];
+          if (filename.toLowerCase().endsWith('.bin')) {
+            filename = filename.slice(0, -4) + '.' + (ext === 'jpeg' ? 'jpg' : ext);
+          } else if (!filename.includes('.')) {
+            filename = filename + '.' + (ext === 'jpeg' ? 'jpg' : ext);
+          }
+          console.log(`[CEP] Recovered image from binary data: ${v.filename} -> ${filename} (${detectedMime})`);
+        }
+      }
+
+      if (isImage) {
+        // Add to allImages if not already present
+        const srcUrl = v.url || filename;
+        result.allImages.push({
+          src: srcUrl,
+          dataUrl: v.dataUrl,
+          mimeType: mime,
+          size: v.size || (v.dataUrl ? Math.round(v.dataUrl.split(',')[1].length * 0.75) : 0),
+          alt: filename
+        });
+      } else {
+        result.allFiles.push({
+          name: filename,
+          dataUrl: v.dataUrl,
+          mimeType: mime,
+          source: 'intercepted-fallback',
+          note: '✓ data'
+        });
+      }
+      consumedStore.add(v);
     }
-    consumedStore.add(v);
   }
 
   // Deduplicate images - multi-key approach:
