@@ -1288,14 +1288,19 @@
                 // Fallback to only valid Claude API endpoints (skip invalid /api/orgId/... endpoints)
                 if (!fileRes) {
                   const endpoints = [
+                    `/api/organizations/${orgId}/files/${fileId}/document_pdf`,
+                    `/api/${orgId}/files/${fileId}/document_pdf`,
                     `/api/organizations/${orgId}/files/${fileId}/download`,
+                    `/api/${orgId}/files/${fileId}/download`,
                     `/api/organizations/${orgId}/files/${fileId}/content`,
-                    `/api/organizations/${orgId}/files/${fileId}`
+                    `/api/${orgId}/files/${fileId}/content`,
+                    `/api/organizations/${orgId}/files/${fileId}`,
+                    `/api/${orgId}/files/${fileId}`
                   ];
                   console.log("[CEP] On-demand page-context fetching Claude file:", filename, "fileId:", fileId);
                   
-                  for (const endpoint of endpoints) {
-                    try {
+                  try {
+                    const promises = endpoints.map(async (endpoint) => {
                       const headers = {
                         'accept': 'application/json',
                         ...window.__cep.claudeHeaders
@@ -1308,42 +1313,44 @@
                         credentials: 'include'
                       });
                       lastStatus = tempRes.status;
-                      if (tempRes.ok) {
-                        const ct = (tempRes.headers.get('content-type') || '').toLowerCase();
-                        if (ct.includes('json')) {
-                          try {
-                            const json = await tempRes.json();
-                            console.log("[CEP] Claude file metadata JSON resolved for:", filename, json);
-                            const downloadUrl = findDownloadUrl(json);
-                            if (downloadUrl) {
-                              window.__cep.downloadUrlMap[fileId] = downloadUrl;
-                              let fileHeaders = {};
-                              if (downloadUrl.startsWith('/') || downloadUrl.includes('claude.ai')) {
-                                fileHeaders = { ...window.__cep.claudeHeaders };
-                                if (window.__cep.authHeader) {
-                                  fileHeaders['Authorization'] = window.__cep.authHeader;
-                                }
-                              }
-                              const fRes = await fetchWithTimeout(downloadUrl, {
-                                headers: fileHeaders,
-                                credentials: 'include'
-                              });
-                              if (fRes.ok) {
-                                fileRes = fRes;
-                                break;
-                              }
-                            }
-                          } catch(err) {
-                            console.warn("[CEP] Failed to parse/fetch JSON metadata for:", filename, err);
-                          }
-                        } else {
-                          fileRes = tempRes;
-                          break;
-                        }
+                      if (!tempRes.ok) {
+                        throw new Error(`Endpoint ${endpoint} returned status ${tempRes.status}`);
                       }
-                    } catch(err) {
-                      console.warn("[CEP] On-demand Claude download endpoint try failed for:", endpoint, err);
+                      const ct = (tempRes.headers.get('content-type') || '').toLowerCase();
+                      if (ct.includes('json')) {
+                        const json = await tempRes.json();
+                        console.log("[CEP] Claude file metadata JSON resolved in map for:", filename, json);
+                        const downloadUrl = findDownloadUrl(json);
+                        if (!downloadUrl) {
+                          throw new Error(`No download URL in JSON metadata from ${endpoint}`);
+                        }
+                        window.__cep.downloadUrlMap[fileId] = downloadUrl;
+                        let fileHeaders = {};
+                        if (downloadUrl.startsWith('/') || downloadUrl.includes('claude.ai')) {
+                          fileHeaders = { ...window.__cep.claudeHeaders };
+                          if (window.__cep.authHeader) {
+                            fileHeaders['Authorization'] = window.__cep.authHeader;
+                          }
+                        }
+                        const fRes = await fetchWithTimeout(downloadUrl, {
+                          headers: fileHeaders,
+                          credentials: 'include'
+                        });
+                        if (fRes.ok) {
+                          return fRes;
+                        }
+                        throw new Error(`Download URL fetch failed with status ${fRes.status}`);
+                      } else {
+                        return tempRes;
+                      }
+                    });
+                    
+                    const firstSuccess = await Promise.any(promises);
+                    if (firstSuccess) {
+                      fileRes = firstSuccess;
                     }
+                  } catch (err) {
+                    console.log("[CEP] Parallel fallbacks failed for:", filename, err);
                   }
                 }
 

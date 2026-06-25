@@ -534,8 +534,14 @@ async function extractImages(turn, idMap = {}) {
     // 3. Skip if image is inside a file chip/preview container
     const isInsideFileChip = img.closest('[data-testid="file-thumbnail"], [class*="FilePreview"], [class*="FileChip"], [class*="DocumentChip"], [class*="AttachmentChip"], [class*="file-attachment"], [class*="uploaded-file"]');
     if (isInsideFileChip) {
-      console.log('[CEP] Skipped document preview image inside file chip:', src);
-      continue;
+      const chipName = (chipText(isInsideFileChip) || '').toLowerCase().trim();
+      const isImageFile = chipName.endsWith('.png') || chipName.endsWith('.jpg') || chipName.endsWith('.jpeg') || chipName.endsWith('.gif') || chipName.endsWith('.webp') || chipName.endsWith('.svg');
+      if (!isImageFile) {
+        console.log('[CEP] Skipped document preview image inside file chip:', src, 'chipName:', chipName);
+        continue;
+      } else {
+        console.log('[CEP] Keeping image inside file chip because it represents an image file:', chipName);
+      }
     }
 
     // 3b. Skip PDF/document page previews
@@ -819,6 +825,44 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
           fd.note='✓ intercepted';
           add(fd);
           continue;
+        }
+
+        // Check if it's an image file and try to extract it from the DOM img source directly
+        const cleanNameLower = cleanName.toLowerCase();
+        const isImage = cleanNameLower.endsWith('.png') || cleanNameLower.endsWith('.jpg') || cleanNameLower.endsWith('.jpeg') || cleanNameLower.endsWith('.gif') || cleanNameLower.endsWith('.webp') || cleanNameLower.endsWith('.svg');
+        if (isImage) {
+          const imgEl = chip.querySelector('img');
+          if (imgEl) {
+            const src = resolveImageSrc(imgEl);
+            if (src && !src.startsWith('data:image/svg')) {
+              console.log('[CEP] Found img inside image file chip, fetching source directly:', src);
+              let r;
+              if (src.startsWith('blob:') || src.startsWith('data:')) {
+                try {
+                  const resp = await fetch(src);
+                  const blob = await resp.blob();
+                  const dataUrl = await new Promise((ok, fail) => {
+                    const reader = new FileReader();
+                    reader.onload = () => ok(reader.result);
+                    reader.onerror = fail;
+                    reader.readAsDataURL(blob);
+                  });
+                  r = { dataUrl, mimeType: blob.type, size: blob.size };
+                } catch(e) {
+                  r = { error: e.message };
+                }
+              } else {
+                r = await bg('fetchAsBase64', {url:src});
+              }
+              if (r && !r.error && r.size > 200) {
+                fd.dataUrl = r.dataUrl;
+                fd.mimeType = r.mimeType || 'image/png';
+                fd.note = '✓ intercepted-dom';
+                add(fd);
+                continue;
+              }
+            }
+          }
         }
 
         // Find file ID
@@ -1486,6 +1530,58 @@ async function extractAll() {
     }
   }
   result.allFiles = Array.from(fileMap.values());
+
+  // Move image files from files to images list (for visual rendering in tray/capsule)
+  const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg']);
+  if (result.messages) {
+    for (const msg of result.messages) {
+      if (!msg.files) continue;
+      const remainingFiles = [];
+      for (const file of msg.files) {
+        const ext = file.name.split('.').pop()?.toLowerCase();
+        if (ext && imageExtensions.has(ext) && file.dataUrl) {
+          console.log(`[CEP] Reclassifying file to image: ${file.name}`);
+          if (!msg.images) msg.images = [];
+          const alreadyHasImage = msg.images.some(img => 
+            (img.alt && img.alt.toLowerCase() === file.name.toLowerCase()) || 
+            (img.dataUrl === file.dataUrl)
+          );
+          if (!alreadyHasImage) {
+            msg.images.push({
+              src: file.name,
+              dataUrl: file.dataUrl,
+              mimeType: file.mimeType || `image/${ext === 'jpg' ? 'jpeg' : ext}`,
+              size: file.dataUrl.length,
+              alt: file.name
+            });
+            const alreadyInAllImages = result.allImages.some(img => 
+              (img.alt && img.alt.toLowerCase() === file.name.toLowerCase()) || 
+              (img.dataUrl === file.dataUrl)
+            );
+            if (!alreadyInAllImages) {
+              result.allImages.push({
+                src: file.name,
+                dataUrl: file.dataUrl,
+                mimeType: file.mimeType || `image/${ext === 'jpg' ? 'jpeg' : ext}`,
+                size: file.dataUrl.length,
+                alt: file.name
+              });
+            }
+          }
+        } else {
+          remainingFiles.push(file);
+        }
+      }
+      msg.files = remainingFiles;
+    }
+  }
+
+  // Sync result.allFiles to exclude reclassified images
+  result.allFiles = result.allFiles.filter(file => {
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    const isImageFile = ext && imageExtensions.has(ext) && file.dataUrl;
+    return !isImageFile;
+  });
 
   return result;
 }
