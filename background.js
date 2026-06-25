@@ -306,8 +306,8 @@ async function callGroq(apiKey, system, userMsg) {
   return { text: d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content || "" };
 }
 
-async function callGeminiModel(apiKey, model, system, userMsg) {
-  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey, {
+async function callGeminiModel(apiKey, apiVersion, model, system, userMsg) {
+  const res = await fetch("https://generativelanguage.googleapis.com/" + apiVersion + "/models/" + model + ":generateContent?key=" + apiKey, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -327,28 +327,34 @@ async function callGeminiModel(apiKey, model, system, userMsg) {
     let parsed;
     try { parsed = JSON.parse(text); } catch(_) {}
     const msg = parsed?.error?.message || text;
-    throw new Error(model + " HTTP " + res.status + ": " + msg);
+    throw new Error(apiVersion + "/" + model + " HTTP " + res.status + ": " + msg);
   }
   const d = await res.json();
   const candidate = d.candidates && d.candidates[0];
-  if (!candidate) throw new Error(model + " returned no candidates — content may have been blocked.");
-  if (candidate.finishReason === "SAFETY") throw new Error(model + " blocked this content due to safety filters.");
+  if (!candidate) throw new Error(apiVersion + "/" + model + " returned no candidates — content may have been blocked.");
+  if (candidate.finishReason === "SAFETY") throw new Error(apiVersion + "/" + model + " blocked this content due to safety filters.");
   const text = candidate.content && candidate.content.parts && candidate.content.parts[0] && candidate.content.parts[0].text || "";
-  if (!text) throw new Error(model + " returned an empty response.");
+  if (!text) throw new Error(apiVersion + "/" + model + " returned an empty response.");
   return { text };
 }
 
 async function callGemini(apiKey, system, userMsg) {
-  try {
-    return await callGeminiModel(apiKey, "gemini-2.0-flash", system, userMsg);
-  } catch (e) {
-    console.warn("[CEP] Gemini 2.0 Flash failed, falling back to 1.5 Flash...", e);
+  const attempts = [
+    { version: "v1beta", model: "gemini-2.0-flash" },
+    { version: "v1", model: "gemini-2.0-flash" },
+    { version: "v1", model: "gemini-1.5-flash" },
+    { version: "v1beta", model: "gemini-1.5-flash" }
+  ];
+  const errors = [];
+  for (const att of attempts) {
     try {
-      return await callGeminiModel(apiKey, "gemini-1.5-flash", system, userMsg);
-    } catch (fallbackErr) {
-      throw new Error(e.message + " | Fallback: " + fallbackErr.message);
+      return await callGeminiModel(apiKey, att.version, att.model, system, userMsg);
+    } catch (e) {
+      console.warn("[CEP] Attempt with " + att.version + "/" + att.model + " failed: " + e.message);
+      errors.push(e.message);
     }
   }
+  throw new Error("All Gemini attempts failed: " + errors.join(" | "));
 }
 
 async function handleLLMTest({ provider, apiKey }) {
@@ -376,40 +382,42 @@ async function handleLLMTest({ provider, apiKey }) {
     });
     if (!res.ok) throw new Error("Groq " + res.status + ": " + await res.text());
   } else if (provider === "gemini") {
-    try {
-      res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + apiKey, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: user }] }],
-          generationConfig: { maxOutputTokens: 1 }
-        })
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        let parsed;
-        try { parsed = JSON.parse(text); } catch(_) {}
-        const msg = parsed?.error?.message || text;
-        throw new Error("gemini-2.0-flash HTTP " + res.status + ": " + msg);
-      }
-    } catch (e) {
-      console.warn("[CEP] Test Gemini 2.0 failed, trying 1.5 fallback...", e);
-      res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: user }] }],
-          generationConfig: { maxOutputTokens: 1 }
-        })
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        let parsed;
-        try { parsed = JSON.parse(text); } catch(_) {}
-        const msg = parsed?.error?.message || text;
-        throw new Error("gemini-1.5-flash HTTP " + res.status + ": " + msg);
+    const attempts = [
+      { version: "v1beta", model: "gemini-2.0-flash" },
+      { version: "v1", model: "gemini-2.0-flash" },
+      { version: "v1", model: "gemini-1.5-flash" },
+      { version: "v1beta", model: "gemini-1.5-flash" }
+    ];
+    const errors = [];
+    let success = false;
+    for (const att of attempts) {
+      try {
+        res = await fetch("https://generativelanguage.googleapis.com/" + att.version + "/models/" + att.model + ":generateContent?key=" + apiKey, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: user }] }],
+            generationConfig: { maxOutputTokens: 1 }
+          })
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          let parsed;
+          try { parsed = JSON.parse(text); } catch(_) {}
+          const msg = parsed?.error?.message || text;
+          throw new Error(att.version + "/" + att.model + " HTTP " + res.status + ": " + msg);
+        }
+        success = true;
+        break;
+      } catch (e) {
+        console.warn("[CEP] Test Gemini with " + att.version + "/" + att.model + " failed: " + e.message);
+        errors.push(e.message);
       }
     }
+    if (!success) {
+      throw new Error("All Gemini test attempts failed: " + errors.join(" | "));
+    }
+  }
   } else {
     throw new Error("Unknown provider");
   }
