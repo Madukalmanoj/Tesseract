@@ -56,8 +56,12 @@ body{width:380px;min-height:420px;background:var(--bg);color:var(--t);
 /* LLM section */
 .llm-section{background:var(--s1);border:1px solid var(--b);border-radius:var(--r);padding:12px;margin-bottom:12px}
 .llm-section-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
-.llm-toggle{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;cursor:pointer}
-.llm-toggle input[type=checkbox]{accent-color:var(--acc);width:14px;height:14px;cursor:pointer}
+.switch{position:relative;display:inline-block;width:34px;height:20px}
+.switch input{opacity:0;width:0;height:0}
+.slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background-color:var(--s3);transition:.2s;border-radius:20px;border:1px solid var(--b)}
+.slider:before{position:absolute;content:"";height:14px;width:14px;left:2px;bottom:2px;background-color:var(--t2);transition:.2s;border-radius:50%}
+input:checked + .slider{background-color:var(--acc);border-color:rgba(124,106,247,0.4)}
+input:checked + .slider:before{transform:translateX(14px);background-color:#fff}
 .llm-section-body{display:none}
 .llm-section.expanded .llm-section-body{display:block}
 .provider-tabs{display:flex;gap:5px;margin-bottom:10px}
@@ -203,10 +207,14 @@ body{width:380px;min-height:420px;background:var(--bg);color:var(--t);
   <!-- LLM Auto-Refine section (collapsible) -->
   <div class="llm-section" id="llmSection">
     <div class="llm-section-hdr">
-      <label class="llm-toggle">
-        <input type="checkbox" id="llmEnabled"> Auto-refine with LLM
-      </label>
-      <span id="llmProviderBadge" style="font-size:10px;color:var(--t3)"></span>
+      <span style="font-size:12px;font-weight:600;color:var(--t2)">Auto-refine with LLM</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span id="llmProviderBadge" style="font-size:10px;color:var(--t3);text-transform:uppercase;font-weight:600"></span>
+        <label class="switch">
+          <input type="checkbox" id="llmEnabled">
+          <span class="slider"></span>
+        </label>
+      </div>
     </div>
     <div class="llm-section-body" id="llmBody">
       <div class="provider-tabs">

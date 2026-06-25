@@ -2011,21 +2011,47 @@ function injectStyles() {
       justify-content: space-between;
       align-items: center;
     }
-    .cep-llm-toggle {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      user-select: none;
-      color: var(--cep-t2);
+    .cep-switch {
+      position: relative;
+      display: inline-block;
+      width: 34px;
+      height: 20px;
     }
-    .cep-llm-toggle input[type=checkbox] {
-      accent-color: var(--cep-acc);
-      width: 14px;
-      height: 14px;
+    .cep-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .cep-slider {
+      position: absolute;
       cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: var(--cep-s3);
+      transition: .2s;
+      border-radius: 20px;
+      border: 1px solid var(--cep-b);
+    }
+    .cep-slider:before {
+      position: absolute;
+      content: "";
+      height: 14px;
+      width: 14px;
+      left: 2px;
+      bottom: 2px;
+      background-color: var(--cep-t2);
+      transition: .2s;
+      border-radius: 50%;
+    }
+    .cep-switch input:checked + .cep-slider {
+      background-color: var(--cep-acc);
+      border-color: rgba(124, 106, 247, 0.4);
+    }
+    .cep-switch input:checked + .cep-slider:before {
+      transform: translateX(14px);
+      background-color: #fff;
     }
     .cep-provider-tabs {
       display: flex;
@@ -2771,12 +2797,16 @@ async function showTray(caps, llmEnabled) {
     <div class="cep-section">
       <div class="cep-section-title">⚡ Extract Chat</div>
       
-      <!-- LLM Auto-Refine section (simple toggle) -->
-      <div class="cep-llm-section" id="cep-llmSection" style="margin-bottom: 12px; padding: 10px; display: flex; justify-content: space-between; align-items: center; background: var(--cep-s1); border: 1px solid var(--cep-b); border-radius: var(--cep-r);">
-        <label class="cep-llm-toggle" style="margin-bottom: 0; color: var(--cep-t2); font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;">
-          <input type="checkbox" id="cep-llmEnabled" style="accent-color: var(--cep-acc); width: 14px; height: 14px; cursor: pointer;"> Auto-refine with LLM
-        </label>
-        <span id="cep-llmProviderBadge" style="font-size:10px;color:var(--cep-t3);text-transform:uppercase;font-weight:600;"></span>
+      <!-- LLM Auto-Refine section (simple toggle switch) -->
+      <div class="cep-llm-section" id="cep-llmSection" style="margin-bottom: 12px; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; background: var(--cep-s1); border: 1px solid var(--cep-b); border-radius: var(--cep-r);">
+        <span style="color: var(--cep-t2); font-weight: 600; font-size: 12.5px;">Auto-refine with LLM</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span id="cep-llmProviderBadge" style="font-size:10px;color:var(--cep-t3);text-transform:uppercase;font-weight:600;line-height:1;"></span>
+          <label class="cep-switch">
+            <input type="checkbox" id="cep-llmEnabled">
+            <span class="cep-slider"></span>
+          </label>
+        </div>
       </div>
 
       <!-- Capsule name -->
