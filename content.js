@@ -1615,6 +1615,7 @@ function injectStyles() {
       font-weight: bold;
       user-select: none;
       flex-shrink: 0;
+      align-self: center;
     }
     #cep-launcher:hover {
       background: rgba(124, 106, 247, 0.32);
@@ -1889,22 +1890,67 @@ function findToolbarRow() {
     }
   }
 
-  // Generic approach for ChatGPT, Gemini, Grok:
-  // Walk up from the input element to find the input bar container — a
-  // reasonably-sized flex container that holds both the input and buttons.
+  // ChatGPT, Gemini, Grok:
+  // First, find the active composer area.
   const inputSel = (SEL[PLAT]||SEL.claude).input;
   const input = document.querySelector(inputSel);
   if (!input) return null;
 
+  let composer = input.parentElement;
+  while (composer && composer !== document.body) {
+    if (composer.tagName === 'FORM' || composer.getAttribute('role') === 'presentation' || composer.classList.contains('composer') || composer.offsetHeight > 150) {
+      break;
+    }
+    composer = composer.parentElement;
+  }
+  if (!composer) composer = document.body;
+
+  // We look for buttons inside the composer. We search for common button types
+  // to walk up from (mic, send, upload, settings, etc.)
+  const btnSelectors = [
+    'button[data-testid="send-button"]',
+    'button[data-testid*="send"]',
+    'button[aria-label*="Send message" i]',
+    'button[aria-label*="Send" i]',
+    'button[type="submit"]',
+    'button[aria-label*="voice" i]',
+    'button[aria-label*="Read aloud" i]',
+    'button[aria-label*="microphone" i]',
+    'button[aria-label*="mic" i]',
+    'button[aria-label*="Speak" i]',
+    'button[aria-label*="Speech" i]',
+    'button[aria-label*="Attach" i]',
+    'button[aria-label*="Upload" i]',
+    'button[aria-label*="File" i]',
+    'button[aria-label*="Add" i]'
+  ];
+
+  for (const sel of btnSelectors) {
+    const btn = composer.querySelector(sel);
+    if (btn) {
+      // Walk up from this button to find the first flex row container
+      let cur = btn.parentElement;
+      while (cur && cur !== composer && cur !== document.body) {
+        if (cur.nodeType === 1) {
+          const st = window.getComputedStyle(cur);
+          if (st.display === 'flex' && st.flexDirection === 'row') {
+            return cur;
+          }
+        }
+        cur = cur.parentElement;
+      }
+      return btn.parentElement;
+    }
+  }
+
+  // Fallback if no specific button is found: find a container holding the input
+  // and having at least 1 button, matching a reasonable height.
   let cur = input.parentElement;
   while (cur && cur !== document.body) {
     if (cur.nodeType === 1) {
       const btns = cur.querySelectorAll('button');
       const h = cur.offsetHeight;
-      const w = cur.offsetWidth;
-      // Look for a container that has at least 2 buttons, is reasonably short
-      // (the input bar, not the whole page), and wide enough
-      if (btns.length >= 2 && h > 0 && h < 120 && w > 200) {
+      if (btns.length >= 1 && h > 0 && h < 120) {
         return cur;
       }
     }
