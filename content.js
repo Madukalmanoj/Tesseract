@@ -1831,7 +1831,7 @@ function injectStyles() {
       right: 20px;
       z-index: 999999;
       width: 340px;
-      max-height: 600px;
+      max-height: calc(100vh - 100px);
       background: var(--cep-bg);
       border: 1px solid var(--cep-b);
       border-radius: 14px;
@@ -1840,6 +1840,7 @@ function injectStyles() {
       font-size: 12.5px;
       display: flex;
       flex-direction: column;
+      overflow: hidden;
       color: var(--cep-t);
       animation: cepSlideIn 0.18s ease;
     }
@@ -1854,6 +1855,26 @@ function injectStyles() {
       align-items: center;
       justify-content: space-between;
       background: var(--cep-s1);
+      flex-shrink: 0;
+    }
+    #cep-tray-body {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      min-height: 0;
+    }
+    #cep-tray-body::-webkit-scrollbar {
+      width: 5px;
+    }
+    #cep-tray-body::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    #cep-tray-body::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.12);
+      border-radius: 4px;
+    }
+    #cep-tray-body::-webkit-scrollbar-thumb:hover {
+      background: rgba(255,255,255,0.25);
     }
     .cep-logo-info {
       display: flex;
@@ -2803,6 +2824,9 @@ async function showTray(caps, llmEnabled) {
       <button id="cep-tc">✕</button>
     </div>
 
+    <!-- ── SCROLLABLE BODY ── -->
+    <div id="cep-tray-body">
+
     <!-- ── SECTION 1: EXTRACT ── -->
     <div class="cep-section">
       <div class="cep-section-title">⚡ Extract Chat</div>
@@ -2879,6 +2903,8 @@ async function showTray(caps, llmEnabled) {
         </button>
       </div>
     </div>
+
+    </div><!-- /cep-tray-body -->
   `;
 
   const el = id => tray.querySelector('#' + id);
