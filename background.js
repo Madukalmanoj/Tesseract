@@ -288,7 +288,7 @@ async function callAnthropic(apiKey, system, userMsg) {
       "anthropic-version": "2023-06-01",
       "anthropic-dangerous-direct-browser-access": "true"
     },
-    body: JSON.stringify({ model: "claude-opus-4-5", max_tokens: 2048, system, messages: [{ role: "user", content: userMsg }] })
+    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 4096, system, messages: [{ role: "user", content: userMsg }] })
   });
   if (!res.ok) throw new Error("Anthropic " + res.status + ": " + await res.text());
   const d = await res.json();
@@ -299,7 +299,7 @@ async function callGroq(apiKey, system, userMsg) {
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": "Bearer " + apiKey },
-    body: JSON.stringify({ model: "llama-3.3-70b-versatile", max_tokens: 2048, messages: [{ role: "system", content: system }, { role: "user", content: userMsg }] })
+    body: JSON.stringify({ model: "llama-3.3-70b-versatile", max_tokens: 4096, messages: [{ role: "system", content: system }, { role: "user", content: userMsg }] })
   });
   if (!res.ok) throw new Error("Groq " + res.status + ": " + await res.text());
   const d = await res.json();
@@ -307,18 +307,30 @@ async function callGroq(apiKey, system, userMsg) {
 }
 
 async function callGemini(apiKey, system, userMsg) {
-  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey, {
+  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + apiKey, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       system_instruction: { parts: [{ text: system }] },
       contents: [{ role: "user", parts: [{ text: userMsg }] }],
-      generationConfig: { maxOutputTokens: 2048 }
+      generationConfig: { maxOutputTokens: 8192 },
+      safetySettings: [
+        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+      ]
     })
   });
   if (!res.ok) throw new Error("Gemini " + res.status + ": " + await res.text());
   const d = await res.json();
-  return { text: d.candidates && d.candidates[0] && d.candidates[0].content && d.candidates[0].content.parts && d.candidates[0].content.parts[0] && d.candidates[0].content.parts[0].text || "" };
+  // Handle safety-blocked or empty responses
+  const candidate = d.candidates && d.candidates[0];
+  if (!candidate) throw new Error("Gemini returned no candidates — content may have been blocked.");
+  if (candidate.finishReason === "SAFETY") throw new Error("Gemini blocked this content due to safety filters.");
+  const text = candidate.content && candidate.content.parts && candidate.content.parts[0] && candidate.content.parts[0].text || "";
+  if (!text) throw new Error("Gemini returned an empty response.");
+  return { text };
 }
 
 async function handleLLMTest({ provider, apiKey }) {
@@ -335,7 +347,7 @@ async function handleLLMTest({ provider, apiKey }) {
         "anthropic-version": "2023-06-01",
         "anthropic-dangerous-direct-browser-access": "true"
       },
-      body: JSON.stringify({ model: "claude-opus-4-5", max_tokens: 1, messages: [{ role: "user", content: user }] })
+      body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1, messages: [{ role: "user", content: user }] })
     });
     if (!res.ok) throw new Error("Anthropic " + res.status + ": " + await res.text());
   } else if (provider === "groq") {
@@ -346,7 +358,7 @@ async function handleLLMTest({ provider, apiKey }) {
     });
     if (!res.ok) throw new Error("Groq " + res.status + ": " + await res.text());
   } else if (provider === "gemini") {
-    res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey, {
+    res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + apiKey, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
