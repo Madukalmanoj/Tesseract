@@ -1300,6 +1300,12 @@ async function extractAll() {
     if (consumedStore.has(v)) continue;
     if (!v.filename) continue;
 
+    // Skip unconsumed store files for ChatGPT and Claude to prevent extracting
+    // historical files/images from the conversation tree that are not in the current branch.
+    if (PLAT === 'chatgpt' || PLAT === 'claude') {
+      continue;
+    }
+
     // On Gemini, skip generic "file" or "file.txt" entries from the intercepted store
     // These are metadata artifacts, not actual user files
     if (PLAT === 'gemini') {
@@ -1582,24 +1588,224 @@ async function dropCapsule(cap) {
 
 // ── Capsule tray ──────────────────────────────────────────────────────────────
 let tray=null;
+
+// ── Styles & Launcher ────────────────────────────────────────────────────────
+function injectStyles() {
+  if (document.getElementById('cep-global-styles')) return;
+  const st = document.createElement('style');
+  st.id = 'cep-global-styles';
+  st.textContent = `
+    #cep-launcher {
+      position: absolute;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(124, 106, 247, 0.15);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(124, 106, 247, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 99999;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      color: #a99cf9;
+      font-size: 14px;
+      font-weight: bold;
+      user-select: none;
+    }
+    #cep-launcher:hover {
+      background: rgba(124, 106, 247, 0.3);
+      border-color: #7c6af7;
+      color: #fff;
+      transform: scale(1.08);
+    }
+    #cep-launcher:active {
+      transform: scale(0.95);
+    }
+    #cep-tray{position:fixed;bottom:80px;right:20px;z-index:999999;width:280px;max-height:480px;background:rgba(15,15,16,0.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.08);border-radius:16px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.5),0 0 15px rgba(124,106,247,0.15);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;color:#f0eff4}
+    #cep-th{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:rgba(26,26,30,0.5);border-bottom:1px solid rgba(255,255,255,0.06);font-size:13px;font-weight:600;color:#a99cf9}
+    #cep-tc{background:none;border:none;color:#888;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;padding:4px;border-radius:50%;transition:all 0.15s}
+    #cep-tc:hover{background:rgba(255,255,255,0.1);color:#fff}
+    #cep-tb{padding:10px 12px 6px}
+    #cep-ext-btn{width:100%;padding:8px 12px;border:none;border-radius:10px;background:linear-gradient(135deg,#7c6af7,#a99cf9);color:#fff;font-size:12px;font-weight:600;cursor:pointer;display:flex;justify-content:center;align-items:center;gap:6px;box-shadow:0 4px 12px rgba(124, 106, 247, 0.3);transition:all 0.2s ease}
+    #cep-ext-btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(124, 106, 247, 0.4)}
+    #cep-ext-btn:disabled{background:#2a2a30;color:#666;cursor:not-allowed;transform:none;box-shadow:none}
+    #cep-tl{overflow-y:auto;padding:6px 12px 12px;display:flex;flex-direction:column;gap:8px;flex:1}
+    .cep-cap{background:rgba(26,26,30,0.4);border:1px solid rgba(255,255,255,0.05);border-radius:12px;padding:12px;cursor:pointer;transition:all 0.2s ease}
+    .cep-cap:hover{background:rgba(35,35,40,0.6);border-color:rgba(124,106,247,0.35);transform:translateX(2px)}
+    .cep-cn{font-size:12px;font-weight:600;color:#f0eff4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .cep-cm{font-size:10px;color:#888;margin-top:4px;display:flex;gap:10px}
+    .cep-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);color:#000;font-size:12px;font-weight:600;padding:10px 20px;border-radius:24px;z-index:9999999;box-shadow:0 8px 24px rgba(0,0,0,0.25);animation:cepU 2.5s ease forwards;pointer-events:none}
+    .cep-spin{display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,0.3);border-radius:50%;border-top-color:#fff;animation:cepSpin 0.6s linear infinite}
+    @keyframes cepSpin{to{transform:rotate(360deg)}}
+    @keyframes cepU{0%{opacity:0;transform:translateX(-50%) translateY(10px)}15%{opacity:1;transform:translateX(-50%) translateY(0)}85%{opacity:1}100%{opacity:0}}
+  `;
+  document.head.appendChild(st);
+}
+
+async function toggleTray() {
+  if (tray) {
+    tray.remove();
+    tray = null;
+  } else {
+    try {
+      const res = await chrome.storage.local.get(["capsules"]);
+      showTray(res.capsules || []);
+    } catch (e) {
+      console.error("[CEP] Error loading capsules:", e);
+      showTray([]);
+    }
+  }
+}
+
+function initLauncher() {
+  if (PLAT === 'unknown') return;
+  const inputSel = (SEL[PLAT]||SEL.claude).input;
+  const input = document.querySelector(inputSel);
+  if (!input) return;
+
+  const wrapper = input.parentElement;
+  if (!wrapper) return;
+
+  // Establish relative positioning context if static
+  const compStyle = window.getComputedStyle(wrapper);
+  if (compStyle.position === 'static') {
+    wrapper.style.position = 'relative';
+  }
+
+  // Avoid duplicates
+  if (wrapper.querySelector('#cep-launcher')) return;
+
+  injectStyles();
+
+  const launcher = document.createElement('div');
+  launcher.id = 'cep-launcher';
+  launcher.title = 'OmniExtract Capsules';
+  launcher.innerHTML = '⬡';
+
+  let rightOffset = '52px';
+  let bottomOffset = '12px';
+
+  if (PLAT === 'chatgpt') {
+    rightOffset = '52px';
+    bottomOffset = '10px';
+  } else if (PLAT === 'claude') {
+    rightOffset = '54px';
+    bottomOffset = '14px';
+  } else if (PLAT === 'gemini') {
+    rightOffset = '60px';
+    bottomOffset = '12px';
+  } else if (PLAT === 'grok') {
+    rightOffset = '52px';
+    bottomOffset = '12px';
+  }
+
+  launcher.style.right = rightOffset;
+  launcher.style.bottom = bottomOffset;
+
+  launcher.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleTray();
+  };
+
+  wrapper.appendChild(launcher);
+}
+
+function buildPlainText(data) {
+  const lines = [`# ${data.platform} Chat — ${data.extractedAt}`, `# ${data.url}`, ""];
+  for (const msg of data.messages||[]) {
+    if (msg.role && msg.role !== 'unknown') {
+      lines.push(`[${msg.role.toUpperCase()}]`);
+    }
+    lines.push(msg.text || "");
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
 function showTray(caps) {
   if (tray) tray.remove();
-  tray=document.createElement('div'); tray.id='cep-tray';
-  tray.innerHTML='<div id="cep-th"><span>⬡ Capsules</span><button id="cep-tc">✕</button></div><div id="cep-tl"></div>';
-  const st=document.createElement('style');
-  st.textContent='#cep-tray{position:fixed;bottom:80px;right:20px;z-index:999999;width:270px;max-height:440px;background:#0f0f10;border:1px solid rgba(255,255,255,.12);border-radius:14px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.6);font-family:system-ui,sans-serif;display:flex;flex-direction:column}#cep-th{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#1a1a1e;border-bottom:1px solid rgba(255,255,255,.08);font-size:12px;font-weight:600;color:#a99cf9}#cep-tc{background:none;border:none;color:#666;cursor:pointer;font-size:12px;border-radius:4px}#cep-tc:hover{color:#fff}#cep-tl{overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:6px;flex:1}.cep-cap{background:#1a1a1e;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px 12px;cursor:pointer;transition:all .15s}.cep-cap:hover{background:#232328;border-color:rgba(124,106,247,.4)}.cep-cn{font-size:12px;font-weight:600;color:#f0eff4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cep-cm{font-size:10px;color:#666;margin-top:3px;display:flex;gap:8px}.cep-toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);color:#000;font-size:12px;font-weight:600;padding:8px 18px;border-radius:20px;z-index:9999999;animation:cepU 2.5s ease forwards;pointer-events:none}@keyframes cepU{0%{opacity:0;transform:translateX(-50%) translateY(10px)}20%{opacity:1;transform:translateX(-50%) translateY(0)}80%{opacity:1}100%{opacity:0}}';
-  document.head.appendChild(st);
-  const list=tray.querySelector('#cep-tl');
-  if (!caps.length) { list.innerHTML='<div style="color:#555;font-size:12px;text-align:center;padding:20px">No capsules yet.</div>'; }
-  else caps.forEach(cap=>{
-    const el=document.createElement('div'); el.className='cep-cap';
-    const ic=(cap.images||[]).filter(i=>i.dataUrl).length;
-    const fc=(cap.files||[]).filter(f=>f.dataUrl).length;
-    el.innerHTML=`<div class="cep-cn">💊 ${eh(cap.name||'Capsule')}</div><div class="cep-cm"><span>📝 ${cap.promptText?Math.ceil(cap.promptText.length/4)+'tok':'—'}</span>${ic?`<span>🖼 ${ic}</span>`:''}${fc?`<span>📎 ${fc}</span>`:''}</div>`;
-    el.onclick=()=>{dropCapsule(cap);tray.remove();tray=null;};
-    list.appendChild(el);
-  });
-  tray.querySelector('#cep-tc').onclick=()=>{tray.remove();tray=null;};
+  tray = document.createElement('div');
+  tray.id = 'cep-tray';
+  
+  tray.innerHTML = `
+    <div id="cep-th">
+      <span>⬡ Capsules</span>
+      <button id="cep-tc">✕</button>
+    </div>
+    <div id="cep-tb">
+      <button id="cep-ext-btn">⚡ Extract Chat</button>
+    </div>
+    <div id="cep-tl"></div>
+  `;
+  injectStyles();
+
+  // Hook Extract button click
+  const extBtn = tray.querySelector('#cep-ext-btn');
+  extBtn.onclick = async () => {
+    extBtn.disabled = true;
+    extBtn.innerHTML = '<span class="cep-spin"></span> Extracting...';
+    try {
+      const extracted = await extractAll();
+      const capsuleName = (document.title || "Chat").replace(/ [-|].*$/, "").trim().slice(0, 50) || "Chat Capsule";
+      const plainText = buildPlainText(extracted);
+      
+      const cap = {
+        id: Date.now().toString(),
+        name: capsuleName,
+        promptText: plainText,
+        rawText: plainText,
+        images: (extracted.allImages||[]).filter(i=>i.dataUrl),
+        files: (extracted.allFiles||[]),
+        platform: extracted.platform,
+        sourceUrl: extracted.url,
+        createdAt: new Date().toISOString(),
+        llmRefined: false
+      };
+
+      const stored = await chrome.storage.local.get(["capsules"]);
+      const capsList = stored.capsules || [];
+      capsList.push(cap);
+      while (capsList.length > 50) capsList.shift();
+      await chrome.storage.local.set({ capsules: capsList });
+      
+      toast("✓ Chat extracted and saved!");
+      showTray(capsList);
+    } catch (err) {
+      console.error("[CEP] Inline extraction failed:", err);
+      toast("❌ Extraction failed: " + err.message, true);
+      extBtn.disabled = false;
+      extBtn.innerHTML = '⚡ Extract Chat';
+    }
+  };
+
+  const list = tray.querySelector('#cep-tl');
+  if (!caps.length) {
+    list.innerHTML = '<div style="color:#555;font-size:12px;text-align:center;padding:20px">No capsules yet.</div>';
+  } else {
+    caps.forEach(cap => {
+      const el = document.createElement('div');
+      el.className = 'cep-cap';
+      const ic = (cap.images || []).filter(i => i.dataUrl).length;
+      const fc = (cap.files || []).filter(f => f.dataUrl).length;
+      el.innerHTML = `<div class="cep-cn">💊 ${eh(cap.name || 'Capsule')}</div><div class="cep-cm"><span>📝 ${cap.promptText ? Math.ceil(cap.promptText.length / 4) + 'tok' : '—'}</span>${ic ? `<span>🖼 ${ic}</span>` : ''}${fc ? `<span>📎 ${fc}</span>` : ''}</div>`;
+      el.onclick = () => {
+        dropCapsule(cap);
+        tray.remove();
+        tray = null;
+      };
+      list.appendChild(el);
+    });
+  }
+
+  tray.querySelector('#cep-tc').onclick = () => {
+    tray.remove();
+    tray = null;
+  };
   document.body.appendChild(tray);
 }
 
@@ -1688,4 +1894,9 @@ chrome.runtime.onMessage.addListener((req,_,send)=>{
 
 // Run pending transfer check
 checkPendingTransfer();
+
+// Start launcher injection loop
+setInterval(initLauncher, 1500);
+// Also run immediately on load
+initLauncher();
 })();
