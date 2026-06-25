@@ -1219,14 +1219,33 @@
               const k = filename.toLowerCase().trim();
               const isClaudeFile = typeof fileId === 'string' && /^[a-f0-9-]{36}$/.test(fileId);
               if (!window.__cep.files[k] && isClaudeFile) {
-                // Try the wiggle/download-file endpoint FIRST for blob files (ZIPs, etc.)
-                // This is the endpoint Claude's own UI uses for file downloads
+                // Timeout fetch helper (5 seconds timeout)
+                const fetchWithTimeout = async (url, options = {}) => {
+                  const controller = new AbortController();
+                  const id = setTimeout(() => controller.abort(), 5000);
+                  try {
+                    const response = await _fetch(url, {
+                      ...options,
+                      signal: controller.signal
+                    });
+                    clearTimeout(id);
+                    return response;
+                  } catch (err) {
+                    clearTimeout(id);
+                    throw err;
+                  }
+                };
+
+                let fileRes = null;
+                let lastStatus = 0;
+
+                // Try the wiggle/download-file endpoint FIRST for text/blob files (ZIPs, docx, etc.)
                 const filePath = window.__cep.filePathMap[fileId];
                 if (filePath && convId) {
                   try {
                     const wiggleUrl = `/api/organizations/${orgId}/conversations/${convId}/wiggle/download-file?path=${encodeURIComponent(filePath)}`;
                     console.log("[CEP] Trying wiggle download for:", filename, wiggleUrl);
-                    const wiggleRes = await _fetch(wiggleUrl, { credentials: 'include' });
+                    const wiggleRes = await fetchWithTimeout(wiggleUrl, { credentials: 'include' });
                     if (wiggleRes.ok) {
                       const buffer = await wiggleRes.arrayBuffer();
                       const ct = wiggleRes.headers.get('content-type') || 'application/octet-stream';
@@ -1242,20 +1261,38 @@
                   }
                 }
 
-                const endpoints = [
-                  `/api/${orgId}/files/${fileId}/content`,
-                  `/api/${orgId}/files/${fileId}/document_pdf`,
-                  `/api/${orgId}/files/${fileId}/download`,
-                  `/api/organizations/${orgId}/files/${fileId}/download`,
-                  `/api/${orgId}/files/${fileId}/preview`,
-                  `/api/${orgId}/files/${fileId}`,
-                  `/api/organizations/${orgId}/files/${fileId}/content`,
-                  `/api/organizations/${orgId}/files/${fileId}`
-                ];
-                console.log("[CEP] On-demand page-context fetching Claude file:", filename, "fileId:", fileId);
-                try {
-                  let fileRes = null;
-                  let lastStatus = 0;
+                // Try direct download URL from conversation tree if available
+                const knownDownloadUrl = window.__cep.downloadUrlMap[fileId];
+                if (knownDownloadUrl) {
+                  try {
+                    console.log("[CEP] Trying known download URL for:", filename, knownDownloadUrl);
+                    let fileHeaders = {};
+                    if (knownDownloadUrl.startsWith('/') || knownDownloadUrl.includes('claude.ai')) {
+                      fileHeaders = { ...window.__cep.claudeHeaders };
+                      if (window.__cep.authHeader) {
+                        fileHeaders['Authorization'] = window.__cep.authHeader;
+                      }
+                    }
+                    const fRes = await fetchWithTimeout(knownDownloadUrl, {
+                      headers: fileHeaders,
+                      credentials: 'include'
+                    });
+                    if (fRes.ok) {
+                      fileRes = fRes;
+                    }
+                  } catch (err) {
+                    console.warn("[CEP] Known download URL fetch failed for:", filename, err);
+                  }
+                }
+
+                // Fallback to only valid Claude API endpoints (skip invalid /api/orgId/... endpoints)
+                if (!fileRes) {
+                  const endpoints = [
+                    `/api/organizations/${orgId}/files/${fileId}/download`,
+                    `/api/organizations/${orgId}/files/${fileId}/content`,
+                    `/api/organizations/${orgId}/files/${fileId}`
+                  ];
+                  console.log("[CEP] On-demand page-context fetching Claude file:", filename, "fileId:", fileId);
                   
                   for (const endpoint of endpoints) {
                     try {
@@ -1266,7 +1303,7 @@
                       if (window.__cep.authHeader) {
                         headers['Authorization'] = window.__cep.authHeader;
                       }
-                      const tempRes = await _fetch(endpoint, {
+                      const tempRes = await fetchWithTimeout(endpoint, {
                         headers,
                         credentials: 'include'
                       });
@@ -1287,7 +1324,7 @@
                                   fileHeaders['Authorization'] = window.__cep.authHeader;
                                 }
                               }
-                              const fRes = await _fetch(downloadUrl, {
+                              const fRes = await fetchWithTimeout(downloadUrl, {
                                 headers: fileHeaders,
                                 credentials: 'include'
                               });
@@ -1308,7 +1345,9 @@
                       console.warn("[CEP] On-demand Claude download endpoint try failed for:", endpoint, err);
                     }
                   }
+                }
 
+                try {
                   if (fileRes) {
                     console.log("[CEP] On-demand Claude content response for:", filename, fileRes.status);
                     const buffer = await fileRes.arrayBuffer();
@@ -1329,7 +1368,7 @@
                     }
                   }
                 } catch(e) {
-                  console.warn("[CEP] Failed on-demand Claude fetch for file:", filename, e);
+                  console.warn("[CEP] Failed on-demand Claude fetch processing for file:", filename, e);
                 }
               }
             }));
