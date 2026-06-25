@@ -538,6 +538,15 @@ async function extractImages(turn, idMap = {}) {
       continue;
     }
 
+    // 3b. Skip PDF/document page previews
+    const isPagePreview = /^page-\d+\./i.test(alt) || 
+                          img.closest('[data-testid^="page-"]:not([data-testid="page-header"])') || 
+                          sl.includes('/preview');
+    if (isPagePreview) {
+      console.log('[CEP] Skipped PDF/document page preview image:', alt, src);
+      continue;
+    }
+
     // 4. UUID-based skip fallback (using idMap)
     const uuidMatch = src.match(/\/files\/([a-f0-9-]{36})/);
     if (uuidMatch) {
@@ -781,6 +790,7 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
       '[class*="AttachmentChip"]','[class*="file-attachment"]','[class*="uploaded-file"]',
       'button[aria-label*=".pdf"]','button[aria-label*=".docx"]','button[aria-label*=".zip"]',
       'div[role="button"][aria-label]',
+      '[data-testid*="."]:not([data-testid^="page-"])'
     ];
     for (const sel of chipSels) {
       for (const chip of turn.querySelectorAll(sel)) {
@@ -1037,6 +1047,21 @@ function chipText(el) {
       if (t&&t.length>1&&t.length<200&&!t.includes('\n')) return t;
     }
     return el.innerText?.trim()?.split('\n')[0]?.trim()||null;
+  }
+
+  // Check data-testid attribute containing a dot first (useful for dynamically named chips like PDF on Claude)
+  const dt = el.getAttribute('data-testid');
+  if (dt && dt.includes('.') && dt.length < 200 && !dt.toLowerCase().startsWith('page-')) {
+    return dt.trim();
+  }
+
+  // Check alt attribute of an image inside (useful for PDF/docx thumbnails without text labels)
+  const img = el.querySelector('img');
+  if (img) {
+    const alt = img.getAttribute('alt');
+    if (alt && alt.includes('.') && alt.length < 200 && !alt.toLowerCase().startsWith('page-')) {
+      return alt.trim();
+    }
   }
 
   const al = el.getAttribute('aria-label')||el.title||'';
