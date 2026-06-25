@@ -574,7 +574,15 @@ function cleanForLLM(rawText) {
     .replace(/Claude\s+[Ff]able\s+\d+\s+is\s+currently\s+unavailable\.?\s*Learn\s+more/gi, '')
     .replace(/Claude is AI and can make mistakes\. Please double-check responses\.?/gi, '')
     // Generic out of free messages
-    .replace(/You are out of free messages until [0-9: AM|PM|am|pm\s]+Upgrade/gi, '');
+    .replace(/You are out of free messages until [0-9: AM|PM|am|pm\s]+Upgrade/gi, '')
+    // Strip potential API keys / sensitive tokens to avoid safety filter blocks (e.g. GitHub tokens, OpenAI keys, etc.)
+    .replace(/\bghp_[a-zA-Z0-9]{36,255}\b/gi, '[REDACTED_GITHUB_TOKEN]')
+    .replace(/\bgithub_pat_[a-zA-Z0-9_]{82}\b/gi, '[REDACTED_GITHUB_TOKEN]')
+    .replace(/\bsk-[a-zA-Z0-9]{48}\b/g, '[REDACTED_OPENAI_KEY]')
+    .replace(/\bsk-proj-[a-zA-Z0-9]{152}\b/g, '[REDACTED_OPENAI_KEY]')
+    .replace(/\bsk-ant-[a-zA-Z0-9-]{95,150}\b/g, '[REDACTED_ANTHROPIC_KEY]')
+    .replace(/\bgsk_[a-zA-Z0-9]{50,100}\b/g, '[REDACTED_GROQ_KEY]')
+    .replace(/\bAIzaSy[a-zA-Z0-9_-]{33}\b/g, '[REDACTED_GEMINI_KEY]');
 
   const lines = processed.split('\n');
   const cleaned = [];
