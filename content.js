@@ -1764,24 +1764,560 @@ async function dropCapsule(cap) {
 
 // ── Capsule tray ──────────────────────────────────────────────────────────────
 let tray=null;
-function showTray(caps) {
-  if (tray) tray.remove();
-  tray=document.createElement('div'); tray.id='cep-tray';
-  tray.innerHTML='<div id="cep-th"><span>⬡ Capsules</span><button id="cep-tc">✕</button></div><div id="cep-tl"></div>';
-  const st=document.createElement('style');
-  st.textContent='#cep-tray{position:fixed;bottom:80px;right:20px;z-index:999999;width:270px;max-height:440px;background:#0f0f10;border:1px solid rgba(255,255,255,.12);border-radius:14px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.6);font-family:system-ui,sans-serif;display:flex;flex-direction:column}#cep-th{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#1a1a1e;border-bottom:1px solid rgba(255,255,255,.08);font-size:12px;font-weight:600;color:#a99cf9}#cep-tc{background:none;border:none;color:#666;cursor:pointer;font-size:12px;border-radius:4px}#cep-tc:hover{color:#fff}#cep-tl{overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:6px;flex:1}.cep-cap{background:#1a1a1e;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px 12px;cursor:pointer;transition:all .15s}.cep-cap:hover{background:#232328;border-color:rgba(124,106,247,.4)}.cep-cn{font-size:12px;font-weight:600;color:#f0eff4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cep-cm{font-size:10px;color:#666;margin-top:3px;display:flex;gap:8px}.cep-toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);color:#000;font-size:12px;font-weight:600;padding:8px 18px;border-radius:20px;z-index:9999999;animation:cepU 2.5s ease forwards;pointer-events:none}@keyframes cepU{0%{opacity:0;transform:translateX(-50%) translateY(10px)}20%{opacity:1;transform:translateX(-50%) translateY(0)}80%{opacity:1}100%{opacity:0}}';
+
+// ── Styles & Launcher ────────────────────────────────────────────────────────
+function injectStyles() {
+  if (document.getElementById('cep-global-styles')) return;
+  const st = document.createElement('style');
+  st.id = 'cep-global-styles';
+  st.textContent = `
+    #cep-launcher {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(124, 106, 247, 0.15);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1.5px solid rgba(124, 106, 247, 0.45);
+      cursor: pointer;
+      z-index: 99999;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25), inset 0 0 6px rgba(124,106,247,0.1);
+      color: #a99cf9;
+      font-size: 15px;
+      font-weight: bold;
+      user-select: none;
+      flex-shrink: 0;
+      align-self: center;
+    }
+    #cep-launcher:hover {
+      background: rgba(124, 106, 247, 0.32);
+      border-color: #7c6af7;
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(124,106,247,0.4);
+      transform: scale(1.1);
+    }
+    #cep-launcher:active { transform: scale(0.93); }
+    #cep-launcher.cep-open {
+      background: rgba(124, 106, 247, 0.35);
+      border-color: #7c6af7;
+      color: #fff;
+      box-shadow: 0 0 0 3px rgba(124,106,247,0.2);
+    }
+    #cep-tray {
+      position: fixed;
+      bottom: 80px;
+      right: 20px;
+      z-index: 999999;
+      width: 300px;
+      max-height: 520px;
+      background: rgba(13,13,15,0.92);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 18px;
+      overflow: hidden;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.6), 0 0 20px rgba(124,106,247,0.12);
+      font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+      display: flex;
+      flex-direction: column;
+      color: #f0eff4;
+      animation: cepSlideIn 0.18s ease;
+    }
+    @keyframes cepSlideIn {
+      from { opacity: 0; transform: translateY(10px) scale(0.97); }
+      to   { opacity: 1; transform: translateY(0)   scale(1);    }
+    }
+    #cep-th {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 13px 16px 12px;
+      background: rgba(22,22,26,0.6);
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      font-size: 13px;
+      font-weight: 700;
+      color: #c4bbff;
+      letter-spacing: 0.01em;
+    }
+    #cep-tc {
+      background: none;
+      border: none;
+      color: #666;
+      cursor: pointer;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px;
+      border-radius: 50%;
+      transition: all 0.15s;
+    }
+    #cep-tc:hover { background: rgba(255,255,255,0.1); color: #fff; }
+
+    /* ── Tabs ── */
+    #cep-tabs {
+      display: flex;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      background: rgba(18,18,22,0.5);
+    }
+    .cep-tab {
+      flex: 1;
+      padding: 9px 0;
+      border: none;
+      background: none;
+      color: #666;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      border-bottom: 2px solid transparent;
+      text-align: center;
+    }
+    .cep-tab:hover { color: #aaa; }
+    .cep-tab-active {
+      color: #c4bbff;
+      border-bottom-color: #7c6af7;
+    }
+    .cep-tab-panel {
+      padding: 14px;
+    }
+
+    /* ── Extract panel ── */
+    #cep-ext-btn {
+      width: 100%;
+      padding: 10px 14px;
+      border: none;
+      border-radius: 11px;
+      background: linear-gradient(135deg, #7c6af7 0%, #a99cf9 100%);
+      color: #fff;
+      font-size: 12.5px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 7px;
+      box-shadow: 0 4px 14px rgba(124,106,247,0.35);
+      transition: all 0.2s ease;
+      letter-spacing: 0.01em;
+    }
+    #cep-ext-btn:hover { transform: translateY(-1px); box-shadow: 0 7px 20px rgba(124,106,247,0.45); }
+    #cep-ext-btn:disabled { background: #252530; color: #555; cursor: not-allowed; transform: none; box-shadow: none; }
+
+    /* ── LLM Toggle ── */
+    #cep-llm-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 2px 6px;
+      font-size: 11.5px;
+      color: #888;
+    }
+    #cep-llm-row span { font-size: 11.5px; }
+    .cep-toggle {
+      position: relative;
+      display: inline-block;
+      width: 36px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+    .cep-toggle input { opacity: 0; width: 0; height: 0; }
+    .cep-toggle-track {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: #333;
+      border-radius: 20px;
+      transition: background 0.25s;
+    }
+    .cep-toggle-track:before {
+      content: '';
+      position: absolute;
+      height: 14px;
+      width: 14px;
+      left: 3px;
+      bottom: 3px;
+      background: #666;
+      border-radius: 50%;
+      transition: transform 0.25s, background 0.25s;
+    }
+    .cep-toggle input:checked + .cep-toggle-track { background: rgba(124,106,247,0.4); }
+    .cep-toggle input:checked + .cep-toggle-track:before {
+      transform: translateX(16px);
+      background: #a99cf9;
+    }
+
+    /* ── Extract info ── */
+    #cep-extract-info {
+      margin-top: 10px;
+      padding: 10px 12px;
+      background: rgba(22,22,28,0.4);
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.04);
+    }
+    .cep-info-item {
+      font-size: 11px;
+      color: #777;
+      padding: 3px 0;
+    }
+    .cep-info-item strong { color: #bbb; }
+
+    /* ── Capsules panel ── */
+    #cep-tab-capsules .cep-tab-panel,
+    #cep-tab-capsules { padding: 0; }
+    #cep-tl {
+      overflow-y: auto;
+      padding: 0 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex: 1;
+    }
+    #cep-tl::-webkit-scrollbar { width: 4px; }
+    #cep-tl::-webkit-scrollbar-thumb { background: rgba(124,106,247,0.3); border-radius: 4px; }
+    .cep-cap {
+      background: rgba(22,22,28,0.5);
+      border: 1px solid rgba(255,255,255,0.055);
+      border-radius: 11px;
+      padding: 11px 12px;
+      cursor: pointer;
+      transition: all 0.18s ease;
+    }
+    .cep-cap:hover {
+      background: rgba(32,32,42,0.7);
+      border-color: rgba(124,106,247,0.38);
+      transform: translateX(2px);
+    }
+    .cep-cn { font-size: 12px; font-weight: 600; color: #f0eff4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cep-cm { font-size: 10px; color: #777; margin-top: 4px; display: flex; gap: 10px; }
+    .cep-toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #000;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 10px 22px;
+      border-radius: 24px;
+      z-index: 9999999;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+      animation: cepU 2.5s ease forwards;
+      pointer-events: none;
+    }
+    .cep-spin {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: cepSpin 0.6s linear infinite;
+    }
+    @keyframes cepSpin { to { transform: rotate(360deg); } }
+    @keyframes cepU {
+      0%   { opacity: 0; transform: translateX(-50%) translateY(10px); }
+      15%  { opacity: 1; transform: translateX(-50%) translateY(0); }
+      85%  { opacity: 1; }
+      100% { opacity: 0; }
+    }
+  `;
   document.head.appendChild(st);
-  const list=tray.querySelector('#cep-tl');
-  if (!caps.length) { list.innerHTML='<div style="color:#555;font-size:12px;text-align:center;padding:20px">No capsules yet.</div>'; }
-  else caps.forEach(cap=>{
-    const el=document.createElement('div'); el.className='cep-cap';
-    const ic=(cap.images||[]).filter(i=>i.dataUrl).length;
-    const fc=(cap.files||[]).filter(f=>f.dataUrl).length;
-    el.innerHTML=`<div class="cep-cn">💊 ${eh(cap.name||'Capsule')}</div><div class="cep-cm"><span>📝 ${cap.promptText?Math.ceil(cap.promptText.length/4)+'tok':'—'}</span>${ic?`<span>🖼 ${ic}</span>`:''}${fc?`<span>📎 ${fc}</span>`:''}</div>`;
-    el.onclick=()=>{dropCapsule(cap);tray.remove();tray=null;};
-    list.appendChild(el);
+}
+
+async function toggleTray() {
+  if (tray) {
+    tray.remove();
+    tray = null;
+    document.getElementById('cep-launcher')?.classList.remove('cep-open');
+  } else {
+    try {
+      const res = await chrome.storage.local.get(["capsules", "llmEnabled"]);
+      showTray(res.capsules || [], res.llmEnabled || false);
+      document.getElementById('cep-launcher')?.classList.add('cep-open');
+    } catch (e) {
+      console.error("[CEP] Error loading capsules:", e);
+      showTray([], false);
+    }
+  }
+}
+
+// ── Launcher: find the bottom toolbar row and append our button ───────────────
+function findToolbarRow() {
+  // Claude: walk up from model-selector-dropdown to find the flex row with buttons
+  if (PLAT === 'claude') {
+    const ms = document.querySelector('[data-testid="model-selector-dropdown"]');
+    if (ms) {
+      let cur = ms;
+      while (cur && cur !== document.body) {
+        if (cur !== ms && cur.nodeType === 1) {
+          const st = window.getComputedStyle(cur);
+          if (st.display === 'flex' && st.flexDirection === 'row') {
+            const btns = cur.querySelectorAll('button');
+            if (btns.length > 1) return cur;
+          }
+        }
+        cur = cur.parentElement;
+      }
+    }
+  }
+
+  // ChatGPT, Gemini, Grok:
+  // First, find the active composer area.
+  const inputSel = (SEL[PLAT]||SEL.claude).input;
+  const input = document.querySelector(inputSel);
+  if (!input) return null;
+
+  let composer = input.parentElement;
+  while (composer && composer !== document.body) {
+    if (composer.tagName === 'FORM' || composer.getAttribute('role') === 'presentation' || composer.classList.contains('composer') || composer.offsetHeight > 150) {
+      break;
+    }
+    composer = composer.parentElement;
+  }
+  if (!composer) composer = document.body;
+
+  // We look for buttons inside the composer. We search for common button types
+  // to walk up from (mic, send, upload, settings, etc.)
+  const btnSelectors = [
+    'button[data-testid="send-button"]',
+    'button[data-testid*="send"]',
+    'button[aria-label*="Send message" i]',
+    'button[aria-label*="Send" i]',
+    'button[type="submit"]',
+    'button[aria-label*="voice" i]',
+    'button[aria-label*="Read aloud" i]',
+    'button[aria-label*="microphone" i]',
+    'button[aria-label*="mic" i]',
+    'button[aria-label*="Speak" i]',
+    'button[aria-label*="Speech" i]',
+    'button[aria-label*="Attach" i]',
+    'button[aria-label*="Upload" i]',
+    'button[aria-label*="File" i]',
+    'button[aria-label*="Add" i]'
+  ];
+
+  for (const sel of btnSelectors) {
+    const btn = composer.querySelector(sel);
+    if (btn) {
+      // Walk up from this button to find the first flex row container
+      let cur = btn.parentElement;
+      while (cur && cur !== composer && cur !== document.body) {
+        if (cur.nodeType === 1) {
+          const st = window.getComputedStyle(cur);
+          if (st.display === 'flex' && st.flexDirection === 'row') {
+            return cur;
+          }
+        }
+        cur = cur.parentElement;
+      }
+      return btn.parentElement;
+    }
+  }
+
+  // Fallback if no specific button is found: find a container holding the input
+  // and having at least 1 button, matching a reasonable height.
+  let cur = input.parentElement;
+  while (cur && cur !== document.body) {
+    if (cur.nodeType === 1) {
+      const btns = cur.querySelectorAll('button');
+      const h = cur.offsetHeight;
+      if (btns.length >= 1 && h > 0 && h < 120) {
+        return cur;
+      }
+    }
+    cur = cur.parentElement;
+  }
+
+  return null;
+}
+
+function initLauncher() {
+  if (PLAT === 'unknown') return;
+  if (document.getElementById('cep-launcher')) return;
+
+  injectStyles();
+
+  const launcher = document.createElement('div');
+  launcher.id = 'cep-launcher';
+  launcher.title = 'OmniExtract';
+  launcher.innerHTML = '⬡';
+  launcher.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleTray();
+  };
+
+  // Strategy 1: Append to the toolbar row (beside voice/mic/send buttons)
+  const toolbar = findToolbarRow();
+  if (toolbar) {
+    toolbar.appendChild(launcher);
+    return;
+  }
+
+  // Strategy 2: Absolute-position fallback in the input wrapper
+  const inputSel = (SEL[PLAT]||SEL.claude).input;
+  const input = document.querySelector(inputSel);
+  if (!input) return;
+  const wrapper = input.parentElement;
+  if (!wrapper) return;
+  const compStyle = window.getComputedStyle(wrapper);
+  if (compStyle.position === 'static') wrapper.style.position = 'relative';
+  const offsets = { chatgpt:['52px','10px'], claude:['54px','14px'], gemini:['60px','12px'], grok:['52px','12px'] };
+  const [r, b] = offsets[PLAT] || ['52px','12px'];
+  launcher.style.cssText = `position:absolute;right:${r};bottom:${b};`;
+  wrapper.appendChild(launcher);
+}
+
+function buildPlainText(data) {
+  const lines = [`# ${data.platform} Chat — ${data.extractedAt}`, `# ${data.url}`, ""];
+  for (const msg of data.messages||[]) {
+    if (msg.role && msg.role !== 'unknown') {
+      lines.push(`[${msg.role.toUpperCase()}]`);
+    }
+    lines.push(msg.text || "");
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
+function showTray(caps, llmEnabled) {
+  if (tray) tray.remove();
+  tray = document.createElement('div');
+  tray.id = 'cep-tray';
+
+  tray.innerHTML = `
+    <div id="cep-th">
+      <span>⬡ OmniExtract</span>
+      <button id="cep-tc">✕</button>
+    </div>
+    <div id="cep-tabs">
+      <button class="cep-tab cep-tab-active" data-tab="extract">⚡ Extract</button>
+      <button class="cep-tab" data-tab="capsules">💊 Capsules</button>
+    </div>
+    <div id="cep-tab-extract" class="cep-tab-panel">
+      <button id="cep-ext-btn">⚡ Extract Chat</button>
+      <div id="cep-llm-row">
+        <span>🤖 Auto-refine with LLM</span>
+        <label class="cep-toggle" title="Toggle LLM refinement">
+          <input type="checkbox" id="cep-llm-chk" ${llmEnabled ? 'checked' : ''}>
+          <span class="cep-toggle-track"></span>
+        </label>
+      </div>
+      <div id="cep-extract-info">
+        <div class="cep-info-item">📍 Platform: <strong>${PLAT}</strong></div>
+        <div class="cep-info-item">📄 Page: <strong>${(document.title || 'Untitled').replace(/ [-|].*$/, '').trim().slice(0,40)}</strong></div>
+      </div>
+    </div>
+    <div id="cep-tab-capsules" class="cep-tab-panel" style="display:none">
+      <div id="cep-tl"></div>
+    </div>
+  `;
+
+  injectStyles();
+
+  // Tab switching
+  const tabs = tray.querySelectorAll('.cep-tab');
+  const panels = {
+    extract: tray.querySelector('#cep-tab-extract'),
+    capsules: tray.querySelector('#cep-tab-capsules')
+  };
+  tabs.forEach(tab => {
+    tab.onclick = () => {
+      tabs.forEach(t => t.classList.remove('cep-tab-active'));
+      tab.classList.add('cep-tab-active');
+      Object.values(panels).forEach(p => p.style.display = 'none');
+      panels[tab.dataset.tab].style.display = '';
+    };
   });
-  tray.querySelector('#cep-tc').onclick=()=>{tray.remove();tray=null;};
+
+  // LLM toggle handler
+  const llmChk = tray.querySelector('#cep-llm-chk');
+  llmChk.onchange = () => {
+    chrome.storage.local.set({ llmEnabled: llmChk.checked });
+  };
+
+  // Extract button handler
+  const extBtn = tray.querySelector('#cep-ext-btn');
+  extBtn.onclick = async () => {
+    extBtn.disabled = true;
+    extBtn.innerHTML = '<span class="cep-spin"></span> Extracting...';
+    try {
+      const extracted = await extractAll();
+      const capsuleName = (document.title || "Chat").replace(/ [-|].*$/, "").trim().slice(0, 50) || "Chat Capsule";
+      const plainText = buildPlainText(extracted);
+      const useLLM = tray.querySelector('#cep-llm-chk')?.checked || false;
+
+      const cap = {
+        id: Date.now().toString(),
+        name: capsuleName,
+        promptText: plainText,
+        rawText: plainText,
+        images: (extracted.allImages||[]).filter(i=>i.dataUrl),
+        files: (extracted.allFiles||[]),
+        platform: extracted.platform,
+        sourceUrl: extracted.url,
+        createdAt: new Date().toISOString(),
+        llmRefined: false
+      };
+
+      const stored = await chrome.storage.local.get(["capsules"]);
+      const capsList = stored.capsules || [];
+      capsList.push(cap);
+      while (capsList.length > 50) capsList.shift();
+      await chrome.storage.local.set({ capsules: capsList });
+
+      if (useLLM) {
+        toast("⚙️ Extracted! LLM refining in background.");
+      } else {
+        toast("✓ Chat extracted & saved!");
+      }
+      // Switch to capsules tab and refresh
+      showTray(capsList, useLLM);
+      // Auto-switch to capsules tab after extraction
+      setTimeout(() => {
+        const capTab = tray?.querySelector('.cep-tab[data-tab="capsules"]');
+        if (capTab) capTab.click();
+      }, 50);
+    } catch (err) {
+      console.error("[CEP] Inline extraction failed:", err);
+      toast("❌ Extraction failed: " + err.message, true);
+      extBtn.disabled = false;
+      extBtn.innerHTML = '⚡ Extract Chat';
+    }
+  };
+
+  // Capsule list
+  const list = tray.querySelector('#cep-tl');
+  if (!caps.length) {
+    list.innerHTML = '<div style="color:#444;font-size:11.5px;text-align:center;padding:24px 12px">No capsules yet.<br>Go to the Extract tab to save a chat!</div>';
+  } else {
+    [...caps].reverse().forEach(cap => {
+      const el = document.createElement('div');
+      el.className = 'cep-cap';
+      const ic = (cap.images || []).filter(i => i.dataUrl).length;
+      const fc = (cap.files || []).filter(f => f.dataUrl).length;
+      const plat = cap.platform ? `<span>${cap.platform}</span>` : '';
+      el.innerHTML = `<div class="cep-cn">💊 ${eh(cap.name || 'Capsule')}</div><div class="cep-cm"><span>📝 ${cap.promptText ? Math.ceil(cap.promptText.length / 4) + ' tok' : '—'}</span>${ic ? `<span>🖼 ${ic}</span>` : ''}${fc ? `<span>📎 ${fc}</span>` : ''}${plat}</div>`;
+      el.onclick = () => {
+        dropCapsule(cap);
+        tray.remove();
+        tray = null;
+        document.getElementById('cep-launcher')?.classList.remove('cep-open');
+      };
+      list.appendChild(el);
+    });
+  }
+
+  tray.querySelector('#cep-tc').onclick = () => {
+    tray.remove();
+    tray = null;
+    document.getElementById('cep-launcher')?.classList.remove('cep-open');
+  };
   document.body.appendChild(tray);
 }
 
@@ -1863,11 +2399,26 @@ async function checkPendingTransfer() {
 chrome.runtime.onMessage.addListener((req,_,send)=>{
   if (req.action==='ping')           {send({platform:PLAT,ready:true});return true;}
   if (req.action==='extract')        {extractAll().then(d=>send({success:true,data:d})).catch(e=>send({success:false,error:e.message}));return true;}
-  if (req.action==='showCapsuleTray'){showTray(req.capsules||[]);send({ok:true});return true;}
+  if (req.action==='showCapsuleTray'){
+    chrome.storage.local.get(['llmEnabled']).then(r => showTray(req.capsules||[], r.llmEnabled||false));
+    send({ok:true});return true;
+  }
   if (req.action==='dropCapsule')    {dropCapsule(req.capsule);send({ok:true});return true;}
   if (req.action==='hideCapsuleTray'){if(tray){tray.remove();tray=null;}send({ok:true});return true;}
 });
 
 // Run pending transfer check
 checkPendingTransfer();
+
+// Start launcher injection loop — also re-inject if launcher was removed by SPA rerender
+setInterval(() => {
+  const existing = document.getElementById('cep-launcher');
+  // If launcher exists but is detached from DOM, remove it so initLauncher can re-inject
+  if (existing && !document.body.contains(existing)) {
+    existing.remove();
+  }
+  initLauncher();
+}, 1500);
+// Also run immediately on load
+initLauncher();
 })();
