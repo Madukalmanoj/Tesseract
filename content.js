@@ -1889,37 +1889,26 @@ function findToolbarRow() {
     }
   }
 
-  // ChatGPT: look for the composer toolbar with send button
-  if (PLAT === 'chatgpt') {
-    for (const sel of ['button[data-testid="send-button"]', 'button[aria-label*="Send" i]']) {
-      const btn = document.querySelector(sel);
-      if (btn) {
-        // Walk up to find a flex row parent
-        let cur = btn.parentElement;
-        while (cur && cur !== document.body) {
-          const st = window.getComputedStyle(cur);
-          if (st.display === 'flex' && st.flexDirection === 'row' && cur.querySelectorAll('button').length > 1) return cur;
-          cur = cur.parentElement;
-        }
-        return btn.parentElement;
+  // Generic approach for ChatGPT, Gemini, Grok:
+  // Walk up from the input element to find the input bar container — a
+  // reasonably-sized flex container that holds both the input and buttons.
+  const inputSel = (SEL[PLAT]||SEL.claude).input;
+  const input = document.querySelector(inputSel);
+  if (!input) return null;
+
+  let cur = input.parentElement;
+  while (cur && cur !== document.body) {
+    if (cur.nodeType === 1) {
+      const btns = cur.querySelectorAll('button');
+      const h = cur.offsetHeight;
+      const w = cur.offsetWidth;
+      // Look for a container that has at least 2 buttons, is reasonably short
+      // (the input bar, not the whole page), and wide enough
+      if (btns.length >= 2 && h > 0 && h < 120 && w > 200) {
+        return cur;
       }
     }
-  }
-
-  // Gemini: the toolbar with mic/send at the bottom
-  if (PLAT === 'gemini') {
-    for (const sel of ['button[aria-label*="microphone" i]', 'button[aria-label*="Send" i]']) {
-      const btn = document.querySelector(sel);
-      if (btn && btn.parentElement) return btn.parentElement;
-    }
-  }
-
-  // Grok
-  if (PLAT === 'grok') {
-    for (const sel of ['button[aria-label*="Send" i]', 'button[type="submit"]']) {
-      const btn = document.querySelector(sel);
-      if (btn && btn.parentElement) return btn.parentElement;
-    }
+    cur = cur.parentElement;
   }
 
   return null;
