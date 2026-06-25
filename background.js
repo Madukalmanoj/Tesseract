@@ -339,16 +339,30 @@ async function callGeminiModel(apiKey, apiVersion, model, system, userMsg) {
 }
 
 async function callGemini(apiKey, system, userMsg) {
+  const stored = await chrome.storage.local.get("lastSuccessfulGeminiModel");
+  const lastSuccess = stored.lastSuccessfulGeminiModel;
+
   const attempts = [
     { version: "v1beta", model: "gemini-2.0-flash" },
     { version: "v1", model: "gemini-2.0-flash" },
     { version: "v1", model: "gemini-1.5-flash" },
     { version: "v1beta", model: "gemini-1.5-flash" }
   ];
+
+  if (lastSuccess) {
+    const idx = attempts.findIndex(a => a.version === lastSuccess.version && a.model === lastSuccess.model);
+    if (idx !== -1) {
+      attempts.splice(idx, 1);
+    }
+    attempts.unshift(lastSuccess);
+  }
+
   const errors = [];
   for (const att of attempts) {
     try {
-      return await callGeminiModel(apiKey, att.version, att.model, system, userMsg);
+      const res = await callGeminiModel(apiKey, att.version, att.model, system, userMsg);
+      await chrome.storage.local.set({ lastSuccessfulGeminiModel: att });
+      return res;
     } catch (e) {
       console.warn("[CEP] Attempt with " + att.version + "/" + att.model + " failed: " + e.message);
       errors.push(e.message);
@@ -382,12 +396,24 @@ async function handleLLMTest({ provider, apiKey }) {
     });
     if (!res.ok) throw new Error("Groq " + res.status + ": " + await res.text());
   } else if (provider === "gemini") {
+    const stored = await chrome.storage.local.get("lastSuccessfulGeminiModel");
+    const lastSuccess = stored.lastSuccessfulGeminiModel;
+
     const attempts = [
       { version: "v1beta", model: "gemini-2.0-flash" },
       { version: "v1", model: "gemini-2.0-flash" },
       { version: "v1", model: "gemini-1.5-flash" },
       { version: "v1beta", model: "gemini-1.5-flash" }
     ];
+
+    if (lastSuccess) {
+      const idx = attempts.findIndex(a => a.version === lastSuccess.version && a.model === lastSuccess.model);
+      if (idx !== -1) {
+        attempts.splice(idx, 1);
+      }
+      attempts.unshift(lastSuccess);
+    }
+
     const errors = [];
     let success = false;
     for (const att of attempts) {
@@ -407,6 +433,7 @@ async function handleLLMTest({ provider, apiKey }) {
           const msg = parsed?.error?.message || text;
           throw new Error(att.version + "/" + att.model + " HTTP " + res.status + ": " + msg);
         }
+        await chrome.storage.local.set({ lastSuccessfulGeminiModel: att });
         success = true;
         break;
       } catch (e) {
