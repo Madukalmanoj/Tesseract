@@ -1681,19 +1681,43 @@ function injectStyles() {
     }
     #cep-tc:hover { background: rgba(255,255,255,0.1); color: #fff; }
 
-    /* ── Extract section ── */
-    #cep-extract-section {
-      padding: 12px 14px 10px;
+    /* ── Tabs ── */
+    #cep-tabs {
+      display: flex;
       border-bottom: 1px solid rgba(255,255,255,0.06);
+      background: rgba(18,18,22,0.5);
     }
+    .cep-tab {
+      flex: 1;
+      padding: 9px 0;
+      border: none;
+      background: none;
+      color: #666;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      border-bottom: 2px solid transparent;
+      text-align: center;
+    }
+    .cep-tab:hover { color: #aaa; }
+    .cep-tab-active {
+      color: #c4bbff;
+      border-bottom-color: #7c6af7;
+    }
+    .cep-tab-panel {
+      padding: 14px;
+    }
+
+    /* ── Extract panel ── */
     #cep-ext-btn {
       width: 100%;
-      padding: 9px 14px;
+      padding: 10px 14px;
       border: none;
       border-radius: 11px;
       background: linear-gradient(135deg, #7c6af7 0%, #a99cf9 100%);
       color: #fff;
-      font-size: 12px;
+      font-size: 12.5px;
       font-weight: 700;
       cursor: pointer;
       display: flex;
@@ -1712,7 +1736,7 @@ function injectStyles() {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 9px 14px 11px;
+      padding: 12px 2px 6px;
       font-size: 11.5px;
       color: #888;
     }
@@ -1750,19 +1774,24 @@ function injectStyles() {
       background: #a99cf9;
     }
 
-    /* ── Capsules section ── */
-    #cep-caps-header {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 10px 14px 6px;
-      font-size: 11px;
-      font-weight: 700;
-      color: #555;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      border-top: 1px solid rgba(255,255,255,0.04);
+    /* ── Extract info ── */
+    #cep-extract-info {
+      margin-top: 10px;
+      padding: 10px 12px;
+      background: rgba(22,22,28,0.4);
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.04);
     }
+    .cep-info-item {
+      font-size: 11px;
+      color: #777;
+      padding: 3px 0;
+    }
+    .cep-info-item strong { color: #bbb; }
+
+    /* ── Capsules panel ── */
+    #cep-tab-capsules .cep-tab-panel,
+    #cep-tab-capsules { padding: 0; }
     #cep-tl {
       overflow-y: auto;
       padding: 0 10px 12px;
@@ -1840,17 +1869,64 @@ async function toggleTray() {
   }
 }
 
-// ── Per-platform selectors for the toolbar row (where voice btn lives) ────────
-const TOOLBAR_SEL = {
-  claude:  'button[aria-label*="voice" i], button[aria-label*="speak" i], button[aria-label*="audio" i], [data-testid*="voice" i], [data-testid*="audio" i]',
-  chatgpt: 'button[aria-label*="voice" i], button[aria-label*="speak" i], button[data-testid*="composer-speech" i], [aria-label*="audio" i]',
-  gemini:  'button[aria-label*="voice" i], button[aria-label*="speak" i], button[aria-label*="microphone" i]',
-  grok:    'button[aria-label*="voice" i], button[aria-label*="speak" i], button[aria-label*="audio" i]',
-};
+// ── Launcher: find the bottom toolbar row and append our button ───────────────
+function findToolbarRow() {
+  // Claude: walk up from model-selector-dropdown to find the flex row with buttons
+  if (PLAT === 'claude') {
+    const ms = document.querySelector('[data-testid="model-selector-dropdown"]');
+    if (ms) {
+      let cur = ms;
+      while (cur && cur !== document.body) {
+        if (cur !== ms && cur.nodeType === 1) {
+          const st = window.getComputedStyle(cur);
+          if (st.display === 'flex' && st.flexDirection === 'row') {
+            const btns = cur.querySelectorAll('button');
+            if (btns.length > 1) return cur;
+          }
+        }
+        cur = cur.parentElement;
+      }
+    }
+  }
+
+  // ChatGPT: look for the composer toolbar with send button
+  if (PLAT === 'chatgpt') {
+    for (const sel of ['button[data-testid="send-button"]', 'button[aria-label*="Send" i]']) {
+      const btn = document.querySelector(sel);
+      if (btn) {
+        // Walk up to find a flex row parent
+        let cur = btn.parentElement;
+        while (cur && cur !== document.body) {
+          const st = window.getComputedStyle(cur);
+          if (st.display === 'flex' && st.flexDirection === 'row' && cur.querySelectorAll('button').length > 1) return cur;
+          cur = cur.parentElement;
+        }
+        return btn.parentElement;
+      }
+    }
+  }
+
+  // Gemini: the toolbar with mic/send at the bottom
+  if (PLAT === 'gemini') {
+    for (const sel of ['button[aria-label*="microphone" i]', 'button[aria-label*="Send" i]']) {
+      const btn = document.querySelector(sel);
+      if (btn && btn.parentElement) return btn.parentElement;
+    }
+  }
+
+  // Grok
+  if (PLAT === 'grok') {
+    for (const sel of ['button[aria-label*="Send" i]', 'button[type="submit"]']) {
+      const btn = document.querySelector(sel);
+      if (btn && btn.parentElement) return btn.parentElement;
+    }
+  }
+
+  return null;
+}
 
 function initLauncher() {
   if (PLAT === 'unknown') return;
-  // Avoid duplicate
   if (document.getElementById('cep-launcher')) return;
 
   injectStyles();
@@ -1865,32 +1941,14 @@ function initLauncher() {
     toggleTray();
   };
 
-  // Strategy 1: Place immediately before (to the left of) the voice/mic button
-  const voiceSel = TOOLBAR_SEL[PLAT] || '';
-  if (voiceSel) {
-    const voiceBtn = document.querySelector(voiceSel);
-    if (voiceBtn) {
-      // Insert as the previous sibling of the voice button
-      voiceBtn.parentElement.insertBefore(launcher, voiceBtn);
-      return;
-    }
+  // Strategy 1: Append to the toolbar row (beside voice/mic/send buttons)
+  const toolbar = findToolbarRow();
+  if (toolbar) {
+    toolbar.appendChild(launcher);
+    return;
   }
 
-  // Strategy 2: Place inside the toolbar row that contains the submit button
-  const submitSels = [
-    'button[data-testid="send-button"]',
-    'button[aria-label*="send" i]',
-    'button[type="submit"]',
-  ];
-  for (const sel of submitSels) {
-    const btn = document.querySelector(sel);
-    if (btn) {
-      btn.parentElement.insertBefore(launcher, btn);
-      return;
-    }
-  }
-
-  // Strategy 3: Absolute-position fallback in the input wrapper
+  // Strategy 2: Absolute-position fallback in the input wrapper
   const inputSel = (SEL[PLAT]||SEL.claude).input;
   const input = document.querySelector(inputSel);
   if (!input) return;
@@ -1920,14 +1978,17 @@ function showTray(caps, llmEnabled) {
   if (tray) tray.remove();
   tray = document.createElement('div');
   tray.id = 'cep-tray';
-  
+
   tray.innerHTML = `
     <div id="cep-th">
       <span>⬡ OmniExtract</span>
       <button id="cep-tc">✕</button>
     </div>
-
-    <div id="cep-extract-section">
+    <div id="cep-tabs">
+      <button class="cep-tab cep-tab-active" data-tab="extract">⚡ Extract</button>
+      <button class="cep-tab" data-tab="capsules">💊 Capsules</button>
+    </div>
+    <div id="cep-tab-extract" class="cep-tab-panel">
       <button id="cep-ext-btn">⚡ Extract Chat</button>
       <div id="cep-llm-row">
         <span>🤖 Auto-refine with LLM</span>
@@ -1936,13 +1997,32 @@ function showTray(caps, llmEnabled) {
           <span class="cep-toggle-track"></span>
         </label>
       </div>
+      <div id="cep-extract-info">
+        <div class="cep-info-item">📍 Platform: <strong>${PLAT}</strong></div>
+        <div class="cep-info-item">📄 Page: <strong>${(document.title || 'Untitled').replace(/ [-|].*$/, '').trim().slice(0,40)}</strong></div>
+      </div>
     </div>
-
-    <div id="cep-caps-header">💊 Capsules</div>
-    <div id="cep-tl"></div>
+    <div id="cep-tab-capsules" class="cep-tab-panel" style="display:none">
+      <div id="cep-tl"></div>
+    </div>
   `;
 
   injectStyles();
+
+  // Tab switching
+  const tabs = tray.querySelectorAll('.cep-tab');
+  const panels = {
+    extract: tray.querySelector('#cep-tab-extract'),
+    capsules: tray.querySelector('#cep-tab-capsules')
+  };
+  tabs.forEach(tab => {
+    tab.onclick = () => {
+      tabs.forEach(t => t.classList.remove('cep-tab-active'));
+      tab.classList.add('cep-tab-active');
+      Object.values(panels).forEach(p => p.style.display = 'none');
+      panels[tab.dataset.tab].style.display = '';
+    };
+  });
 
   // LLM toggle handler
   const llmChk = tray.querySelector('#cep-llm-chk');
@@ -1974,18 +2054,24 @@ function showTray(caps, llmEnabled) {
         llmRefined: false
       };
 
-      const stored = await chrome.storage.local.get(["capsules", "llmEnabled"]);
+      const stored = await chrome.storage.local.get(["capsules"]);
       const capsList = stored.capsules || [];
       capsList.push(cap);
       while (capsList.length > 50) capsList.shift();
       await chrome.storage.local.set({ capsules: capsList });
 
       if (useLLM) {
-        toast("⚙️ Extracted! LLM refinement runs in background.");
+        toast("⚙️ Extracted! LLM refining in background.");
       } else {
-        toast("✓ Chat extracted and saved!");
+        toast("✓ Chat extracted & saved!");
       }
+      // Switch to capsules tab and refresh
       showTray(capsList, useLLM);
+      // Auto-switch to capsules tab after extraction
+      setTimeout(() => {
+        const capTab = tray?.querySelector('.cep-tab[data-tab="capsules"]');
+        if (capTab) capTab.click();
+      }, 50);
     } catch (err) {
       console.error("[CEP] Inline extraction failed:", err);
       toast("❌ Extraction failed: " + err.message, true);
@@ -1997,9 +2083,8 @@ function showTray(caps, llmEnabled) {
   // Capsule list
   const list = tray.querySelector('#cep-tl');
   if (!caps.length) {
-    list.innerHTML = '<div style="color:#444;font-size:11.5px;text-align:center;padding:18px 12px">No capsules yet. Extract a chat above!</div>';
+    list.innerHTML = '<div style="color:#444;font-size:11.5px;text-align:center;padding:24px 12px">No capsules yet.<br>Go to the Extract tab to save a chat!</div>';
   } else {
-    // Show most recent first
     [...caps].reverse().forEach(cap => {
       const el = document.createElement('div');
       el.className = 'cep-cap';
