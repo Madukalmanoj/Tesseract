@@ -3007,15 +3007,18 @@ async function showTray(caps, llmEnabled) {
       const hasAssistant = (extractedData.messages || []).some(m => m.role === 'assistant');
 
       let refinedText = null;
+      let refineError = null;
       if (useLLM && hasAssistant) {
         showStatus("cep-extractStatus", "info", `<span class="cep-spin"></span>Extracting… then refining with ${prov}…`);
         try {
           const chatText = cleanForLLM(buildPlainText(extractedData));
           const r2 = await chrome.runtime.sendMessage({ action: "llmRefine", provider: prov, apiKey, chatText, capsuleName });
+          if (!r2) throw new Error("No response from background service worker.");
           if (r2.error) throw new Error(r2.error);
           refinedText = r2.text;
         } catch(e) {
-          showStatus("cep-extractStatus", "warn", "⚠ LLM refine failed: " + e.message + " — saving raw text.");
+          refineError = e.message;
+          console.error("[CEP] LLM refine failed:", e);
         }
       }
 
@@ -3046,7 +3049,7 @@ async function showTray(caps, llmEnabled) {
         await saveCapsule(cap);
       }
 
-      renderExtractResults(extractedData, refinedText);
+      renderExtractResults(extractedData, refinedText, refineError);
       return cap;
 
     } catch(e) {
@@ -3062,7 +3065,7 @@ async function showTray(caps, llmEnabled) {
     await runExtractionFlow(true);
   };
 
-  function renderExtractResults(data, refinedText) {
+  function renderExtractResults(data, refinedText, refineError) {
     const msgs  = data.messages || [];
     const imgs  = data.allImages || [];
     const files = data.allFiles || [];
@@ -3121,6 +3124,7 @@ async function showTray(caps, llmEnabled) {
     if (refinedText) statusParts.push("LLM refined ✦");
     let statusMsg = statusParts.join(" · ");
     const warns = [];
+    if (refineError) warns.push(`⚠ LLM refine failed: ${refineError} (saved raw text)`);
     if (failedImgs.length) warns.push(`⚠ ${failedImgs.length} image(s) couldn't be fetched (may be expired)`);
     if (chipsOnly) warns.push(`⚠ ${chipsOnly} file(s) found by name only (no binary available in DOM)`);
     if (warns.length) statusMsg += "<br>" + warns.join("<br>");

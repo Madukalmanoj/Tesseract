@@ -311,7 +311,7 @@ async function callGemini(apiKey, system, userMsg) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      system_instruction: { parts: [{ text: system }] },
+      systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: "user", parts: [{ text: userMsg }] }],
       generationConfig: { maxOutputTokens: 8192 },
       safetySettings: [
