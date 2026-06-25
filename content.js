@@ -518,9 +518,9 @@ async function extractImages(turn, idMap = {}) {
     const alt = (img.getAttribute('alt') || '').toLowerCase().trim();
     const className = (img.className && typeof img.className === 'string') ? img.className.toLowerCase() : '';
     
-    // 1. Skip if alt, class name, or source URL indicates it is an icon
-    if (alt.includes('icon') || className.includes('icon') || sl.includes('icon')) {
-      console.log('[CEP] Skipped icon image:', alt, className, src);
+    // 1. Skip if alt, class name, or source URL indicates it is an icon or a document page preview
+    if (alt.includes('icon') || className.includes('icon') || sl.includes('icon') || sl.includes('/pages/') || sl.includes('/page/')) {
+      console.log('[CEP] Skipped icon or document page image:', alt, className, src);
       continue;
     }
 
@@ -840,6 +840,40 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
           }
         }
         add(fd);
+      }
+    }
+
+    // --- TEXT-BASED FALLBACK FOR CLAUDE IN-TURN FILES ---
+    // If a file from the store is mentioned in this turn's text but wasn't found by the chip selector
+    // (e.g. PDF rendered as pages), we match it directly from the store!
+    const turnText = turn.innerText || '';
+    for (const [k, v] of Object.entries(store || {})) {
+      if (consumedStore.has(v)) continue;
+      if (!v.filename) continue;
+      
+      const cleanName = v.filename.replace(/^\d{10,13}_/, '');
+      if (isUINoiseFileName(cleanName) || seen.has(cleanName.toLowerCase())) continue;
+      
+      // If the turn's text contains the clean filename (case insensitive)
+      const escapedName = cleanName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      const nameRegex = new RegExp(escapedName, 'i');
+      if (nameRegex.test(turnText)) {
+        console.log('[CEP] Matched store file to Claude turn by text content:', cleanName);
+        consumedStore.add(v);
+        
+        // Ensure idMap has the mapping for this file's UUID
+        const uuidMatch = v.url?.match(/\/files\/([a-f0-9-]{36})/);
+        if (uuidMatch) {
+          idMap[uuidMatch[1]] = cleanName;
+        }
+
+        add({
+          name: v.filename,
+          dataUrl: v.dataUrl,
+          mimeType: v.mimeType,
+          source: 'claude-text-matched',
+          note: '✓ data'
+        });
       }
     }
   }
