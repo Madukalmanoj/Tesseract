@@ -33,7 +33,7 @@ async function init() {
 
   const stored = await chrome.storage.local.get(["apiKeys","lastProvider","llmEnabled","open_tab"]);
   if (stored.lastProvider) setProvider(stored.lastProvider);
-  if (stored.apiKeys?.[currentProvider]) $("apiKeyInput").value = stored.apiKeys[currentProvider];
+  $("apiKeyInput").value = stored.apiKeys?.[currentProvider] || "";
 
   // Restore LLM enabled state
   if (stored.llmEnabled) {
@@ -64,12 +64,23 @@ async function init() {
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 document.querySelectorAll(".tab").forEach(t => {
-  t.addEventListener("click", () => {
+  t.addEventListener("click", async () => {
     document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
     document.querySelectorAll(".panel").forEach(x => x.classList.remove("active"));
     t.classList.add("active");
     $("tab-" + t.dataset.tab).classList.add("active");
     if (t.dataset.tab === "capsules") renderCapsuleList();
+    if (t.dataset.tab === "extract") {
+      const stored = await chrome.storage.local.get(["apiKeys"]);
+      const key = stored.apiKeys?.[currentProvider] || "";
+      if (key) {
+        const statusEl = $("extractStatus");
+        if (statusEl && (statusEl.innerHTML.includes("configure your") || statusEl.innerHTML.includes("API key"))) {
+          statusEl.style.display = "none";
+          statusEl.innerHTML = "";
+        }
+      }
+    }
   });
 });
 
@@ -86,6 +97,9 @@ $("llmEnabled").addEventListener("change", async () => {
       return;
     }
   }
+  // Clear any stale warning/error if LLM toggle succeeds or is turned off
+  $("extractStatus").style.display = "none";
+  $("extractStatus").innerHTML = "";
   chrome.storage.local.set({ llmEnabled: on });
   updateProviderBadge();
 });
@@ -125,12 +139,20 @@ $("toggleKey").addEventListener("click", () => {
   $("toggleKey").textContent = show ? "hide" : "show";
 });
 
-$("apiKeyInput").addEventListener("change", async () => {
+$("apiKeyInput").addEventListener("input", async () => {
   const key = $("apiKeyInput").value.trim();
   const r = await chrome.storage.local.get(["apiKeys"]);
   const keys = r.apiKeys || {};
   keys[currentProvider] = key;
-  chrome.storage.local.set({ apiKeys: keys });
+  await chrome.storage.local.set({ apiKeys: keys });
+  
+  if (key) {
+    const statusEl = $("extractStatus");
+    if (statusEl && (statusEl.innerHTML.includes("configure your") || statusEl.innerHTML.includes("API key"))) {
+      statusEl.style.display = "none";
+      statusEl.innerHTML = "";
+    }
+  }
 });
 
 // ── Extract ───────────────────────────────────────────────────────────────────

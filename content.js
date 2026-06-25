@@ -2926,6 +2926,12 @@ async function showTray(caps, llmEnabled) {
         return;
       }
     }
+    // Clear any stale warning/error if LLM toggle succeeds or is turned off
+    const statusEl = el('cep-extractStatus');
+    if (statusEl) {
+      statusEl.style.display = "none";
+      statusEl.innerHTML = "";
+    }
     chrome.storage.local.set({ llmEnabled: on });
     updateProviderBadge();
   };
