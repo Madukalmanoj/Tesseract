@@ -2806,6 +2806,34 @@ function initLauncher() {
     };
   }
 
+  // ChatGPT specific override to prevent overlapping with absolutely positioned send/voice buttons
+  if (PLAT === 'chatgpt') {
+    let composer = input.parentElement;
+    while (composer && composer !== document.body) {
+      if (composer.querySelector('button') && composer.offsetHeight > 50) {
+        break;
+      }
+      composer = composer.parentElement;
+    }
+    if (!composer || composer === document.body) {
+      composer = input.parentElement;
+    }
+    if (composer) {
+      const compStyle = window.getComputedStyle(composer);
+      if (compStyle.position === 'static') composer.style.position = 'relative';
+
+      launcher.style.position = 'absolute';
+      launcher.style.right = '86px';
+      launcher.style.bottom = '10px';
+
+      if (launcher.parentNode !== composer) {
+        if (launcher.parentNode) launcher.remove();
+        composer.appendChild(launcher);
+      }
+    }
+    return;
+  }
+
   // ── Insert as the last inline element in the toolbar row ──
   const toolbar = findToolbarRow();
   if (toolbar) {
