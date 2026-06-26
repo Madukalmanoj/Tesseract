@@ -6,7 +6,7 @@
   // ── Suppress noisy CSP / ad-tracking console errors from the host page ──
   const _origError = console.error;
   const _origWarn = console.warn;
-  const CSP_NOISE = /Content Security Policy|doubleclick\.net|ad\.doubleclick|Refused to connect|violates the.*directive/i;
+  const CSP_NOISE = /Content Security Policy|doubleclick\.net|ad\.doubleclick|Refused to connect|violates the.*directive|SERVICE_WORKER|no longer used.*Unregistering/i;
   console.error = function(...args) {
     if (args.some(a => typeof a === 'string' && CSP_NOISE.test(a))) return;
     return _origError.apply(console, args);
