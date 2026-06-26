@@ -21,8 +21,8 @@ function bg(action, data) {
 
 // ── Get intercepted store from page hook ─────────────────────────────────────
 function getStore() {
-  // Claude needs more time: conversation tree fetch + parallel file downloads
-  const timeout = PLAT === 'claude' ? 15000 : 3000;
+  // Claude & ChatGPT need more time: conversation tree fetch + parallel file downloads
+  const timeout = (PLAT === 'claude' || PLAT === 'chatgpt') ? 15000 : 3000;
   return new Promise(ok => {
     const t = setTimeout(()=>ok({files:{},orgId:null}), timeout);
     window.addEventListener('__cepReply', function h(e) {
