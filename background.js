@@ -288,7 +288,7 @@ async function callAnthropic(apiKey, system, userMsg) {
       "anthropic-version": "2023-06-01",
       "anthropic-dangerous-direct-browser-access": "true"
     },
-    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 4096, system, messages: [{ role: "user", content: userMsg }] })
+    body: JSON.stringify({ model: "claude-3-5-sonnet-latest", max_tokens: 4096, system, messages: [{ role: "user", content: userMsg }] })
   });
   if (!res.ok) throw new Error("Anthropic " + res.status + ": " + await res.text());
   const d = await res.json();
@@ -347,7 +347,7 @@ async function handleLLMTest({ provider, apiKey }) {
         "anthropic-version": "2023-06-01",
         "anthropic-dangerous-direct-browser-access": "true"
       },
-      body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1, messages: [{ role: "user", content: user }] })
+      body: JSON.stringify({ model: "claude-3-5-sonnet-latest", max_tokens: 1, messages: [{ role: "user", content: user }] })
     });
     if (!res.ok) throw new Error("Anthropic " + res.status + ": " + await res.text());
   } else if (provider === "groq") {

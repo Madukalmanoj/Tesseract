@@ -275,22 +275,22 @@ function getRole(turn) {
   if (gptRole) return gptRole === 'user' ? 'user' : 'assistant';
 
   // Claude — data-testid on the element itself or ancestors/descendants
-  const testid = turn.getAttribute('data-testid') || '';
-  if (testid.includes('human')) return 'user';
-  if (testid.includes('ai'))    return 'assistant';
+  const testid = (turn.getAttribute('data-testid') || '').toLowerCase();
+  if (testid.includes('human') || testid.includes('user')) return 'user';
+  if (testid.includes('ai') || testid.includes('assistant') || testid.includes('model')) return 'assistant';
 
   // Check children for testid hints
-  const childTestId = turn.querySelector('[data-testid*="human"]') ? 'user'
-                    : turn.querySelector('[data-testid*="ai"]')    ? 'assistant'
+  const childTestId = turn.querySelector('[data-testid*="human"],[data-testid*="user"]') ? 'user'
+                    : turn.querySelector('[data-testid*="ai"],[data-testid*="assistant"],[data-testid*="model"]') ? 'assistant'
                     : null;
   if (childTestId) return childTestId;
 
   // Check ancestor for testid
-  const ancestor = turn.closest('[data-testid*="human-turn"],[data-testid*="ai-turn"]');
+  const ancestor = turn.closest('[data-testid*="human-turn"],[data-testid*="user-turn"],[data-testid*="ai-turn"],[data-testid*="assistant-turn"],[data-testid*="model-turn"]');
   if (ancestor) {
-    const aid = ancestor.getAttribute('data-testid') || '';
-    if (aid.includes('human')) return 'user';
-    if (aid.includes('ai'))    return 'assistant';
+    const aid = (ancestor.getAttribute('data-testid') || '').toLowerCase();
+    if (aid.includes('human') || aid.includes('user')) return 'user';
+    if (aid.includes('ai') || aid.includes('assistant') || aid.includes('model')) return 'assistant';
   }
 
   // Claude class-based hints
