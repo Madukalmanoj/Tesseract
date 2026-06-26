@@ -2847,10 +2847,10 @@ function initLauncher() {
       }
     }
 
-    // Prepend the launcher to place it on the left side of the toolbar (near attachment/plus buttons)
-    if (launcher.parentNode !== target || launcher !== target.firstElementChild) {
+    // Append the launcher to place it on the right side of the toolbar
+    if (launcher.parentNode !== target || launcher !== target.lastElementChild) {
       if (launcher.parentNode) launcher.remove();
-      target.insertBefore(launcher, target.firstElementChild);
+      target.appendChild(launcher);
     }
     // Reset position to inline-flex (not absolute)
     launcher.style.position = '';
@@ -2876,13 +2876,13 @@ function initLauncher() {
   const compStyle = window.getComputedStyle(composer);
   if (compStyle.position === 'static') composer.style.position = 'relative';
 
-  // Position at the bottom-left to avoid overlapping send/voice buttons on the right
-  const offsets = { chatgpt:['48px','10px'], claude:['52px','14px'], gemini:['48px','12px'], grok:['48px','12px'] };
-  const [defaultL, defaultB] = offsets[PLAT] || ['48px','12px'];
+  // Position at the bottom-right
+  const offsets = { chatgpt:['8px','10px'], claude:['8px','14px'], gemini:['8px','12px'], grok:['8px','12px'] };
+  const [defaultR, defaultB] = offsets[PLAT] || ['8px','12px'];
 
   launcher.style.position = 'absolute';
-  launcher.style.left = defaultL;
-  launcher.style.right = '';
+  launcher.style.left = '';
+  launcher.style.right = defaultR;
   launcher.style.bottom = defaultB;
 
   if (launcher.parentNode !== composer) {
