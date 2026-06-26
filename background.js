@@ -373,3 +373,21 @@ async function handleLLMTest({ provider, apiKey }) {
   
   return { success: true };
 }
+
+// ── Commands listener ─────────────────────────────────────────────────────────
+chrome.commands.onCommand.addListener(async (command) => {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || !tab.id) return;
+    
+    if (command === "extract-capsule") {
+      chrome.tabs.sendMessage(tab.id, { action: "quickExtract" });
+    } else if (command === "drop-last-capsule") {
+      chrome.tabs.sendMessage(tab.id, { action: "dropLastCapsule" });
+    } else if (command === "copy-chat") {
+      chrome.tabs.sendMessage(tab.id, { action: "copyChatText" });
+    }
+  } catch (e) {
+    console.error("[CEP] Error dispatching command:", e);
+  }
+});

@@ -2637,6 +2637,23 @@ function injectStyles() {
       animation: cepU 2.5s ease forwards;
       pointer-events: none;
     }
+    .cep-pinned-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      background: var(--cep-s1);
+      border: 1px solid var(--cep-b);
+      border-radius: var(--cep-r);
+      cursor: pointer;
+      transition: all 0.15s;
+      margin-bottom: 6px;
+    }
+    .cep-pinned-item:hover {
+      background: var(--cep-s2);
+      border-color: var(--cep-b2);
+    }
+
     @keyframes cepU {
       0%   { opacity: 0; transform: translateX(-50%) translateY(10px); }
       15%  { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -2987,6 +3004,65 @@ function buildPlainText(data) {
   return lines.join("\n").replace(/\n{4,}/g, '\n\n\n');
 }
 
+// Helper for silent extraction for direct teleport redirects and keyboard shortcuts
+async function runSilentExtraction(onProgress, overrideUseLLM) {
+  let useLLM = overrideUseLLM;
+  if (useLLM === undefined) {
+    const stored = await chrome.storage.local.get(["llmEnabled"]);
+    useLLM = !!stored.llmEnabled;
+  }
+  const storageData = await chrome.storage.local.get(["apiKeys", "lastProvider"]);
+  const prov = storageData.lastProvider || "groq";
+  const apiKey = storageData.apiKeys?.[prov] || "";
+
+  if (onProgress) onProgress("Extracting chat details...", 15);
+  const extracted = await extractAll();
+  
+  if (onProgress) onProgress("Parsing conversation...", 40);
+  const capsuleName = (document.title || "Chat").replace(/ [-|].*$/, "").trim().slice(0, 50) || "Chat Capsule";
+  const hasAssistant = (extracted.messages || []).some(m => m.role === 'assistant');
+
+  let refinedText = null;
+  if (useLLM && hasAssistant && apiKey) {
+    if (onProgress) onProgress(`Refining with ${prov.toUpperCase()}...`, 60);
+    try {
+      const chatText = cleanForLLM(buildPlainText(extracted));
+      const r2 = await chrome.runtime.sendMessage({ action: "llmRefine", provider: prov, apiKey, chatText, capsuleName });
+      if (r2 && !r2.error) {
+        refinedText = r2.text;
+      }
+    } catch(e) {
+      console.error("[CEP] Silent LLM refine failed:", e);
+    }
+  }
+
+  if (onProgress) onProgress("Packaging context...", 90);
+  let defaultPromptText;
+  if (!hasAssistant) {
+    defaultPromptText = (extracted.messages || [])
+      .map(m => cleanForLLM(m.text))
+      .filter(Boolean)
+      .join('\n\n');
+  } else {
+    defaultPromptText = buildPlainText(extracted);
+  }
+
+  if (onProgress) onProgress("Capsule ready!", 100);
+
+  return {
+    id: Date.now().toString(),
+    name: capsuleName,
+    promptText: refinedText || defaultPromptText,
+    rawText: buildPlainText(extracted),
+    images: (extracted.allImages || []).filter(i => i.dataUrl),
+    files: (extracted.allFiles || []),
+    platform: extracted.platform,
+    sourceUrl: extracted.url,
+    createdAt: new Date().toISOString(),
+    llmRefined: !!refinedText
+  };
+}
+
 async function showTray() {
   if (tray) tray.remove();
   tray = document.createElement('div');
@@ -3043,6 +3119,15 @@ async function showTray() {
       </button>
     </div>
 
+    <!-- ── SECTION: PINNED CAPSULES ── -->
+    <div class="cep-section" id="cep-pinned-section" style="display:none;">
+      <div class="cep-section-title" style="display:flex;align-items:center;gap:6px">
+        <svg class="cep-icon-svg" style="width:11px;height:11px;color:var(--cep-amber);fill:var(--cep-amber)" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+        Pinned Capsules
+      </div>
+      <div id="cep-pinned-list" style="display:flex;flex-direction:column;margin-top:2px;"></div>
+    </div>
+
     <!-- ── SECTION 3: DIRECT REDIRECT ── -->
     <div class="cep-section">
       <div class="cep-section-title" style="display:flex;align-items:center;gap:6px">
@@ -3081,6 +3166,40 @@ async function showTray() {
   `;
 
   const el = id => tray.querySelector('#' + id);
+
+  // Populate pinned capsules list for quick drop
+  const renderPinnedList = async () => {
+    const r = await chrome.storage.local.get(["capsules"]);
+    const capsules = r.capsules || [];
+    const pinnedCaps = capsules.filter(c => c.pinned);
+    const pinnedSec = el('cep-pinned-section');
+    const pinnedList = el('cep-pinned-list');
+    
+    if (pinnedCaps.length > 0) {
+      pinnedSec.style.display = 'block';
+      pinnedList.innerHTML = '';
+      pinnedCaps.forEach(cap => {
+        const item = document.createElement('div');
+        item.className = 'cep-pinned-item';
+        item.innerHTML = `
+          <div style="display:flex;align-items:center;gap:8px;overflow:hidden;flex:1;">
+            <svg class="cep-icon-svg" style="width:12px;height:12px;color:var(--cep-amber);fill:var(--cep-amber);flex-shrink:0" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            <span class="cep-pinned-name">${eh(cap.name)}</span>
+          </div>
+          <span style="font-size:9.5px;color:var(--cep-t3);margin-left:8px;flex-shrink:0;">${cap.platform || 'chat'}</span>
+        `;
+        item.onclick = () => {
+          dropCapsule(cap);
+          closeTray();
+          toast("Capsule dropped!");
+        };
+        pinnedList.appendChild(item);
+      });
+    } else {
+      pinnedSec.style.display = 'none';
+    }
+  };
+  await renderPinnedList();
 
   // Close helper
   const closeTray = () => {
@@ -3130,61 +3249,6 @@ async function showTray() {
     });
   };
 
-  // Helper for silent extraction for direct teleport redirects
-  async function runSilentExtraction(onProgress) {
-    const useLLM = el('cep-llmEnabled').checked;
-    const storageData = await chrome.storage.local.get(["apiKeys", "lastProvider"]);
-    const prov = storageData.lastProvider || "groq";
-    const apiKey = storageData.apiKeys?.[prov] || "";
-
-    if (onProgress) onProgress("Extracting chat details...", 15);
-    const extracted = await extractAll();
-    
-    if (onProgress) onProgress("Parsing conversation...", 40);
-    const capsuleName = (document.title || "Chat").replace(/ [-|].*$/, "").trim().slice(0, 50) || "Chat Capsule";
-    const hasAssistant = (extracted.messages || []).some(m => m.role === 'assistant');
-
-    let refinedText = null;
-    if (useLLM && hasAssistant && apiKey) {
-      if (onProgress) onProgress(`Refining with ${prov.toUpperCase()}...`, 60);
-      try {
-        const chatText = cleanForLLM(buildPlainText(extracted));
-        const r2 = await chrome.runtime.sendMessage({ action: "llmRefine", provider: prov, apiKey, chatText, capsuleName });
-        if (r2 && !r2.error) {
-          refinedText = r2.text;
-        }
-      } catch(e) {
-        console.error("[CEP] Silent LLM refine failed:", e);
-      }
-    }
-
-    if (onProgress) onProgress("Packaging context...", 90);
-    let defaultPromptText;
-    if (!hasAssistant) {
-      defaultPromptText = (extracted.messages || [])
-        .map(m => cleanForLLM(m.text))
-        .filter(Boolean)
-        .join('\n\n');
-    } else {
-      defaultPromptText = buildPlainText(extracted);
-    }
-
-    if (onProgress) onProgress("Capsule ready!", 100);
-
-    return {
-      id: Date.now().toString(),
-      name: capsuleName,
-      promptText: refinedText || defaultPromptText,
-      rawText: buildPlainText(extracted),
-      images: (extracted.allImages || []).filter(i => i.dataUrl),
-      files: (extracted.allFiles || []),
-      platform: extracted.platform,
-      sourceUrl: extracted.url,
-      createdAt: new Date().toISOString(),
-      llmRefined: !!refinedText
-    };
-  }
-
   // Section 3: Teleport/Redirect buttons (with extraction)
   tray.querySelectorAll('.cep-tport-btn').forEach(btn => {
     btn.onclick = async () => {
@@ -3211,7 +3275,8 @@ async function showTray() {
       onProgress("Initializing teleport...", 5);
 
       try {
-        const cap = await runSilentExtraction(onProgress);
+        const useLLM = el('cep-llmEnabled').checked;
+        const cap = await runSilentExtraction(onProgress, useLLM);
         const transfer = {
           targetPlatform: target,
           capsule: cap,
@@ -3319,6 +3384,70 @@ async function checkPendingTransfer() {
   }
 }
 
+// Helper handlers for keyboard shortcuts (used by both commands listener and local keydown listener)
+async function handleQuickExtract() {
+  try {
+    toast("🔄 Extracting capsule...");
+    const cap = await runSilentExtraction();
+    await saveCapsule(cap);
+    if (cap._imagesStripped) {
+      toast("⚠ Capsule saved (no images - storage full)", true);
+    } else {
+      toast(`✓ Saved: "${cap.name}"`);
+    }
+  } catch (e) {
+    console.error("[CEP] Quick extract failed:", e);
+    toast("❌ Extraction failed: " + e.message, true);
+  }
+}
+
+async function handleDropLastCapsule() {
+  try {
+    const r = await chrome.storage.local.get(["capsules"]);
+    const caps = r.capsules || [];
+    if (!caps.length) {
+      toast("❌ No capsules found to drop", true);
+      return;
+    }
+    caps.sort((a,b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+    const lastCap = caps[0];
+    await dropCapsule(lastCap);
+    toast(`✓ Dropped: "${lastCap.name}"`);
+  } catch (e) {
+    console.error("[CEP] Drop last capsule failed:", e);
+    toast("❌ Drop failed: " + e.message, true);
+  }
+}
+
+async function handleCopyChatText() {
+  try {
+    toast("🔄 Copying chat...");
+    const extracted = await extractAll();
+    const text = buildPlainText(extracted);
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (clipErr) {
+      console.warn("[CEP] navigator.clipboard failed, using fallback:", clipErr);
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    toast("✓ Chat copied to clipboard!");
+  } catch (e) {
+    console.error("[CEP] Copy chat failed:", e);
+    toast("❌ Copy failed: " + e.message, true);
+  }
+}
+
 // ── Message listener ──────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((req,_,send)=>{
   if (req.action==='ping')           {send({platform:PLAT,ready:true});return true;}
@@ -3329,6 +3458,21 @@ chrome.runtime.onMessage.addListener((req,_,send)=>{
   }
   if (req.action==='dropCapsule')    {dropCapsule(req.capsule);send({ok:true});return true;}
   if (req.action==='hideCapsuleTray'){if(tray){tray.remove();tray=null;}send({ok:true});return true;}
+
+  if (req.action==='quickExtract') {
+    handleQuickExtract().then(() => send({success:true})).catch(e => send({success:false,error:e.message}));
+    return true;
+  }
+
+  if (req.action==='dropLastCapsule') {
+    handleDropLastCapsule().then(() => send({success:true})).catch(e => send({success:false,error:e.message}));
+    return true;
+  }
+
+  if (req.action==='copyChatText') {
+    handleCopyChatText().then(() => send({success:true})).catch(e => send({success:false,error:e.message}));
+    return true;
+  }
 });
 
 // Run pending transfer check
@@ -3400,4 +3544,21 @@ const observer = new MutationObserver((mutations) => {
   }
 });
 observer.observe(document.body, { childList: true, subtree: true });
+
+// Foolproof local keyboard shortcuts listener
+document.addEventListener('keydown', (e) => {
+  if (e.altKey && e.shiftKey) {
+    const key = e.key.toLowerCase();
+    if (key === 'e') {
+      e.preventDefault();
+      handleQuickExtract();
+    } else if (key === 'd') {
+      e.preventDefault();
+      handleDropLastCapsule();
+    } else if (key === 'x') {
+      e.preventDefault();
+      handleCopyChatText();
+    }
+  }
+});
 })();

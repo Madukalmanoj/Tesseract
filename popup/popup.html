@@ -126,7 +126,10 @@ input:checked + .slider:before{transform:translateX(14px);background-color:#fff}
 .cap-act.drop{background:rgba(124,106,247,.12);border-color:rgba(124,106,247,.35);color:var(--acc)}
 .cap-act.drop:hover{background:rgba(124,106,247,.2)}
 .cap-act.del{color:var(--red);border-color:rgba(248,113,113,.2)}
-.cap-act.del:hover{background:rgba(248,113,113,.1)}
+.cap-pin-btn{position:absolute;top:8px;right:8px;background:none;border:none;cursor:pointer;padding:4px;border-radius:4px;color:var(--t3);display:flex;align-items:center;justify-content:center;transition:all .15s}
+.cap-pin-btn:hover{color:var(--amber);background:rgba(255,255,255,.05)}
+.cap-pin-btn.pinned{color:var(--amber)}
+
 .cap-empty{color:var(--t3);font-size:12px;text-align:center;padding:30px 0}
 
 .spin{display:inline-block;width:11px;height:11px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:sp .5s linear infinite;vertical-align:middle;margin-right:5px}

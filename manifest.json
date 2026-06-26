@@ -109,5 +109,25 @@
         "https://*.x.com/*"
       ]
     }
-  ]
+  ],
+  "commands": {
+    "extract-capsule": {
+      "suggested_key": {
+        "default": "Alt+Shift+E"
+      },
+      "description": "Extract & save capsule instantly"
+    },
+    "drop-last-capsule": {
+      "suggested_key": {
+        "default": "Alt+Shift+D"
+      },
+      "description": "Drop last capsule into current chat"
+    },
+    "copy-chat": {
+      "suggested_key": {
+        "default": "Alt+Shift+X"
+      },
+      "description": "Copy current chat to clipboard"
+    }
+  }
 }

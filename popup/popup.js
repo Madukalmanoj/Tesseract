@@ -504,7 +504,12 @@ async function renderCapsuleList() {
     const card = document.createElement("div");
     card.className = "cap-card";
     card.innerHTML = `
-      <div class="cap-name" style="display:flex;align-items:center;gap:6px">
+      <button class="cap-pin-btn ${cap.pinned ? 'pinned' : ''}" data-pin="${cap.id}" title="${cap.pinned ? 'Unpin capsule' : 'Pin capsule'}">
+        <svg class="icon-svg" style="width:12px;height:12px;" viewBox="0 0 24 24">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" fill="${cap.pinned ? 'var(--amber)' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <div class="cap-name" style="display:flex;align-items:center;gap:6px;padding-right:20px">
         <svg class="icon-svg" style="width:12px;height:12px;transform:rotate(-45deg);color:var(--acc)" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="5" ry="5"></rect><line x1="12" y1="7" x2="12" y2="17"></line></svg>
         ${esc(cap.name)}
       </div>
@@ -539,6 +544,11 @@ async function renderCapsuleList() {
       await navigator.clipboard.writeText(cap.promptText || cap.rawText || "");
       flash(card.querySelector("[data-copy]"), "✓");
     });
+    card.querySelector("[data-pin]").addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await togglePinCapsule(cap.id);
+      renderCapsuleList();
+    });
     card.querySelector("[data-del]").addEventListener("click", async () => {
       if (!confirm(`Delete "${cap.name}"?`)) return;
       await deleteCapsule(cap.id);
@@ -552,7 +562,22 @@ async function renderCapsuleList() {
 // ── Storage ───────────────────────────────────────────────────────────────────
 async function loadCapsules() {
   const r = await chrome.storage.local.get(["capsules"]);
-  return (r.capsules || []).sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+  return (r.capsules || []).sort((a,b) => {
+    if (a.pinned && !b.pinned) return -1;
+    if (!a.pinned && b.pinned) return 1;
+    return new Date(b.createdAt) - new Date(a.createdAt);
+  });
+}
+async function togglePinCapsule(id) {
+  const r = await chrome.storage.local.get(["capsules"]);
+  const caps = r.capsules || [];
+  const updated = caps.map(c => {
+    if (c.id === id) {
+      return { ...c, pinned: !c.pinned };
+    }
+    return c;
+  });
+  await chrome.storage.local.set({ capsules: updated });
 }
 async function saveCapsule(cap) {
   // Log capsule size for debugging
