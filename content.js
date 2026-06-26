@@ -2922,17 +2922,87 @@ async function showTray() {
     });
   };
 
-  // Section 3: Direct redirect buttons
+  // Helper for silent extraction for direct teleport redirects
+  async function runSilentExtraction() {
+    const useLLM = el('cep-llmEnabled').checked;
+    const storageData = await chrome.storage.local.get(["apiKeys", "lastProvider"]);
+    const prov = storageData.lastProvider || "groq";
+    const apiKey = storageData.apiKeys?.[prov] || "";
+
+    const extracted = await extractAll();
+    const capsuleName = (document.title || "Chat").replace(/ [-|].*$/, "").trim().slice(0, 50) || "Chat Capsule";
+    const hasAssistant = (extracted.messages || []).some(m => m.role === 'assistant');
+
+    let refinedText = null;
+    if (useLLM && hasAssistant && apiKey) {
+      try {
+        const chatText = cleanForLLM(buildPlainText(extracted));
+        const r2 = await chrome.runtime.sendMessage({ action: "llmRefine", provider: prov, apiKey, chatText, capsuleName });
+        if (r2 && !r2.error) {
+          refinedText = r2.text;
+        }
+      } catch(e) {
+        console.error("[CEP] Silent LLM refine failed:", e);
+      }
+    }
+
+    let defaultPromptText;
+    if (!hasAssistant) {
+      defaultPromptText = (extracted.messages || [])
+        .map(m => cleanForLLM(m.text))
+        .filter(Boolean)
+        .join('\n\n');
+    } else {
+      defaultPromptText = buildPlainText(extracted);
+    }
+
+    return {
+      id: Date.now().toString(),
+      name: capsuleName,
+      promptText: refinedText || defaultPromptText,
+      rawText: buildPlainText(extracted),
+      images: (extracted.allImages || []).filter(i => i.dataUrl),
+      files: (extracted.allFiles || []),
+      platform: extracted.platform,
+      sourceUrl: extracted.url,
+      createdAt: new Date().toISOString(),
+      llmRefined: !!refinedText
+    };
+  }
+
+  // Section 3: Teleport/Redirect buttons (with extraction)
   tray.querySelectorAll('.cep-tport-btn').forEach(btn => {
-    btn.onclick = () => {
+    btn.onclick = async () => {
       const target = btn.dataset.target;
-      const urls = {
-        claude: "https://claude.ai/new",
-        chatgpt: "https://chatgpt.com/",
-        gemini: "https://gemini.google.com/app",
-        grok: "https://grok.com/"
-      };
-      window.open(urls[target], "_blank");
+      const origHtml = btn.innerHTML;
+      
+      // Disable all teleport buttons during extraction
+      tray.querySelectorAll('.cep-tport-btn').forEach(b => b.disabled = true);
+      btn.innerHTML = `<span class="cep-spin"></span> Teleporting...`;
+
+      try {
+        const cap = await runSilentExtraction();
+        const transfer = {
+          targetPlatform: target,
+          capsule: cap,
+          timestamp: Date.now()
+        };
+        await chrome.storage.local.set({ pending_transfer: transfer });
+
+        const urls = {
+          claude: "https://claude.ai/new",
+          chatgpt: "https://chatgpt.com/",
+          gemini: "https://gemini.google.com/app",
+          grok: "https://grok.com/"
+        };
+        closeTray();
+        window.open(urls[target], "_blank");
+      } catch (e) {
+        console.error("[CEP] Teleport extraction failed:", e);
+        btn.innerHTML = origHtml;
+        tray.querySelectorAll('.cep-tport-btn').forEach(b => b.disabled = false);
+        alert("Failed to extract chat: " + e.message);
+      }
     };
   });
 
