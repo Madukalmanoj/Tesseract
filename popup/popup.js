@@ -261,7 +261,7 @@ async function runExtractionFlow(shouldSave = false) {
 
     // LLM refine — only perform if LLM is enabled AND there is actual assistant/AI response history to refine
     let refinedText = null;
-    if (useLLM && hasAssistant) {
+    if (useLLM && (extractedData.messages || []).length > 0) {
       showStatus("extractStatus","info",`<span class="spin"></span>Extracting… then refining with ${currentProvider}…`);
       updateProgressBar(true, `Refining with ${currentProvider}...`, 80);
       try {

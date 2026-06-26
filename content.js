@@ -3042,7 +3042,7 @@ async function runSilentExtraction(onProgress, overrideUseLLM) {
   const hasAssistant = (extracted.messages || []).some(m => m.role === 'assistant');
 
   let refinedText = null;
-  if (useLLM && hasAssistant && apiKey) {
+  if (useLLM && (extracted.messages || []).length > 0 && apiKey) {
     if (onProgress) onProgress(`Refining with ${prov.toUpperCase()}...`, 60);
     try {
       const chatText = cleanForLLM(buildPlainText(extracted));
