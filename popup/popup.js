@@ -418,8 +418,6 @@ function renderExtractResults(data, refinedText) {
 
   // Status
   const chipsOnly = files.filter(f => !f.dataUrl).length;
-  // Status
-  const chipsOnly = files.filter(f => !f.dataUrl).length;
   let statusParts = [`<svg class="icon-svg" style="width:12px;height:12px;color:var(--green);margin-right:2px;" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg> Tesseract saved! ${msgs.length} messages`];
   if (goodImgs.length) statusParts.push(`${goodImgs.length} image${goodImgs.length>1?"s":""}`);
   else if (imgs.length) statusParts.push(`0/${imgs.length} images captured`);
