@@ -1851,6 +1851,22 @@ async function dropTesseract(tess) {
 // ── Capsule tray ──────────────────────────────────────────────────────────────
 let tray=null;
 
+function closeTray() {
+  if (tray) {
+    tray.remove();
+    tray = null;
+  }
+  document.getElementById('cep-launcher')?.classList.remove('cep-open');
+  document.removeEventListener('click', outsideClickListener);
+}
+
+function outsideClickListener(e) {
+  const launcher = document.getElementById('cep-launcher');
+  if (tray && !tray.contains(e.target) && (!launcher || !launcher.contains(e.target))) {
+    closeTray();
+  }
+}
+
 // ── Styles & Launcher ────────────────────────────────────────────────────────
 function injectStyles() {
   if (document.getElementById('cep-global-styles')) return;
@@ -2670,9 +2686,7 @@ async function toggleTray() {
     return;
   }
   if (tray) {
-    tray.remove();
-    tray = null;
-    document.getElementById('cep-launcher')?.classList.remove('cep-open');
+    closeTray();
   } else {
     try {
       await showTray();
@@ -3225,14 +3239,10 @@ async function showTray() {
   };
   await renderPinnedList();
 
-  // Close helper
-  const closeTray = () => {
-    if (tray) {
-      tray.remove();
-      tray = null;
-    }
-    document.getElementById('cep-launcher')?.classList.remove('cep-open');
-  };
+  // Register click listener to close tray when clicking outside
+  setTimeout(() => {
+    document.addEventListener('click', outsideClickListener);
+  }, 0);
 
   // Close button
   el('cep-tc').onclick = closeTray;
