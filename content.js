@@ -1700,13 +1700,13 @@ function dataUrlToFile(dataUrl, name) {
   }
 }
 
-async function dropCapsule(cap) {
+async function dropTesseract(tess) {
   const inputSel = (SEL[PLAT]||SEL.claude).input;
   const input = document.querySelector(inputSel);
   if (!input) { toast('❌ Input not found', true); return; }
 
   // ── 1. Inject text ────────────────────────────────────────────────────────
-  const text = cap.promptText||cap.rawText||'';
+  const text = tess.promptText||tess.rawText||'';
   if (text) {
     input.focus();
     if (input.tagName==='TEXTAREA') {
@@ -1727,7 +1727,7 @@ async function dropCapsule(cap) {
   // ── 2. Build file objects ─────────────────────────────────────────────────
   const allFiles=[];
   let ii=0;
-  for (const img of (cap.images||[]).filter(i=>i.dataUrl)) {
+  for (const img of (tess.images||[]).filter(i=>i.dataUrl)) {
     try {
       const mime=img.dataUrl.split(',')[0].match(/:(.*?);/)[1];
       const ext=mime.split('/')[1]?.split(';')[0]||'jpg';
@@ -1735,14 +1735,14 @@ async function dropCapsule(cap) {
       if (fileObj) allFiles.push(fileObj);
     } catch(e) { console.warn('[CEP] Bad image dataUrl:', e); }
   }
-  for (const f of (cap.files||[]).filter(f=>f.dataUrl)) {
+  for (const f of (tess.files||[]).filter(f=>f.dataUrl)) {
     try {
       const fileObj = dataUrlToFile(f.dataUrl, f.name);
       if (fileObj) allFiles.push(fileObj);
     } catch(e) { console.warn('[CEP] Bad file dataUrl:', e); }
   }
 
-  if (!allFiles.length) { toast(`Capsule "${cap.name}" dropped!`); return; }
+  if (!allFiles.length) { toast(`Tesseract "${tess.name}" dropped!`); return; }
 
   // ── 3. Inject files ───────────────────────────────────────────────────────
   let injected = false;
@@ -1845,7 +1845,7 @@ async function dropCapsule(cap) {
     }
   }
 
-  toast(`Capsule "${cap.name}" — text + ${allFiles.length} file(s) dropped!`);
+  toast(`Tesseract "${tess.name}" — text + ${allFiles.length} file(s) dropped!`);
 }
 
 // ── Capsule tray ──────────────────────────────────────────────────────────────
@@ -2941,50 +2941,52 @@ function fmtDate(iso) {
   return d.toLocaleDateString();
 }
 
-async function loadCapsules() {
+async function loadTesseracts() {
   if (isContextInvalidated()) return [];
-  const r = await chrome.storage.local.get(["capsules"]);
-  return (r.capsules || []).sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const r = await chrome.storage.local.get(["tesseracts", "cubes", "capsules"]);
+  const list = r.tesseracts || r.cubes || r.capsules || [];
+  return list.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
-async function saveCapsule(cap) {
+async function saveTesseract(tess) {
   if (isContextInvalidated()) return;
-  const imgCount = (cap.images||[]).filter(i=>i.dataUrl).length;
-  const capSize = JSON.stringify(cap).length;
-  console.log(`[CEP] Saving capsule "${cap.name}": ${imgCount} images, ~${(capSize/1024).toFixed(0)}KB`);
+  const imgCount = (tess.images||[]).filter(i=>i.dataUrl).length;
+  const tessSize = JSON.stringify(tess).length;
+  console.log(`[CEP] Saving tesseract "${tess.name}": ${imgCount} images, ~${(tessSize/1024).toFixed(0)}KB`);
 
-  const r = await chrome.storage.local.get(["capsules"]);
-  const caps = r.capsules || [];
-  caps.push(cap);
-  while (caps.length > 50) caps.shift();
+  const r = await chrome.storage.local.get(["tesseracts", "cubes", "capsules"]);
+  const list = r.tesseracts || r.cubes || r.capsules || [];
+  list.push(tess);
+  while (list.length > 50) list.shift();
   try {
-    await chrome.storage.local.set({ capsules: caps });
-    const verify = await chrome.storage.local.get(["capsules"]);
-    const saved = (verify.capsules||[]).find(c => c.id === cap.id);
+    await chrome.storage.local.set({ tesseracts: list });
+    const verify = await chrome.storage.local.get(["tesseracts"]);
+    const savedList = verify.tesseracts || [];
+    const saved = savedList.find(c => c.id === tess.id);
     const savedImgs = saved ? (saved.images||[]).filter(i=>i.dataUrl).length : 0;
     if (savedImgs < imgCount) {
       console.warn(`[CEP] Storage lost images! Saved ${savedImgs}/${imgCount}. Storage quota may be exceeded.`);
     }
   } catch(e) {
     console.error('[CEP] Storage save failed:', e);
-    cap._imagesStripped = true;
-    const stripped = {...cap, images: []};
-    caps[caps.length - 1] = stripped;
-    await chrome.storage.local.set({ capsules: caps });
-    toast("⚠ Storage full — capsule saved without images. Try deleting old capsules.", true);
+    tess._imagesStripped = true;
+    const stripped = {...tess, images: []};
+    list[list.length - 1] = stripped;
+    await chrome.storage.local.set({ tesseracts: list });
+    toast("⚠ Storage full — tesseract saved without images. Try deleting old tesseracts.", true);
   }
 }
 
-async function deleteCapsule(id) {
+async function deleteTesseract(id) {
   if (isContextInvalidated()) return;
-  const r = await chrome.storage.local.get(["capsules"]);
-  const caps = (r.capsules||[]).filter(c => c.id !== id);
-  await chrome.storage.local.set({ capsules: caps });
+  const r = await chrome.storage.local.get(["tesseracts", "cubes", "capsules"]);
+  const list = (r.tesseracts || r.cubes || r.capsules || []).filter(c => c.id !== id);
+  await chrome.storage.local.set({ tesseracts: list });
 }
 
-async function deleteAllCapsules() {
+async function deleteAllTesseracts() {
   if (isContextInvalidated()) return;
-  await chrome.storage.local.set({ capsules: [] });
+  await chrome.storage.local.set({ tesseracts: [] });
 }
 
 function buildPlainText(data) {
@@ -3019,7 +3021,7 @@ async function runSilentExtraction(onProgress, overrideUseLLM) {
   const extracted = await extractAll();
   
   if (onProgress) onProgress("Parsing conversation...", 40);
-  const capsuleName = (document.title || "Chat").replace(/ [-|].*$/, "").trim().slice(0, 50) || "Chat Capsule";
+  const tesseractName = (document.title || "Chat").replace(/ [-|].*$/, "").trim().slice(0, 50) || "Chat Tesseract";
   const hasAssistant = (extracted.messages || []).some(m => m.role === 'assistant');
 
   let refinedText = null;
@@ -3027,7 +3029,7 @@ async function runSilentExtraction(onProgress, overrideUseLLM) {
     if (onProgress) onProgress(`Refining with ${prov.toUpperCase()}...`, 60);
     try {
       const chatText = cleanForLLM(buildPlainText(extracted));
-      const r2 = await chrome.runtime.sendMessage({ action: "llmRefine", provider: prov, apiKey, chatText, capsuleName });
+      const r2 = await chrome.runtime.sendMessage({ action: "llmRefine", provider: prov, apiKey, chatText, tesseractName });
       if (r2 && !r2.error) {
         refinedText = r2.text;
       }
@@ -3047,11 +3049,11 @@ async function runSilentExtraction(onProgress, overrideUseLLM) {
     defaultPromptText = buildPlainText(extracted);
   }
 
-  if (onProgress) onProgress("Capsule ready!", 100);
+  if (onProgress) onProgress("Tesseract ready!", 100);
 
   return {
     id: Date.now().toString(),
-    name: capsuleName,
+    name: tesseractName,
     promptText: refinedText || defaultPromptText,
     rawText: buildPlainText(extracted),
     images: (extracted.allImages || []).filter(i => i.dataUrl),
@@ -3103,27 +3105,27 @@ async function showTray() {
 
       <button class="cep-btn cep-btn-primary" id="cep-btnExtract" style="display:flex;align-items:center;justify-content:center;gap:6px">
         <svg class="cep-icon-svg" style="width:13px;height:13px" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
-        Extract & Save Capsule
+        Extract & Save Tesseract
       </button>
     </div>
 
-    <!-- ── SECTION 2: DROP CAPSULE ── -->
+    <!-- ── SECTION 2: DROP TESSERACT ── -->
     <div class="cep-section">
       <div class="cep-section-title" style="display:flex;align-items:center;gap:6px">
         <svg class="cep-icon-svg" style="width:11px;height:11px;transform:rotate(-45deg)" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="5" ry="5"></rect><line x1="12" y1="7" x2="12" y2="17"></line></svg>
-        Drop Capsule
+        Drop Tesseract
       </div>
       <button class="cep-btn cep-btn-secondary" id="cep-btnOpenPopup" style="display:flex;align-items:center;justify-content:center;gap:6px">
         <svg class="cep-icon-svg" style="width:13px;height:13px;transform:rotate(-45deg)" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="5" ry="5"></rect><line x1="12" y1="7" x2="12" y2="17"></line></svg>
-        Open Capsules Tab
+        Open Tesseracts Tab
       </button>
     </div>
 
-    <!-- ── SECTION: PINNED CAPSULES ── -->
+    <!-- ── SECTION: PINNED TESSERACTS ── -->
     <div class="cep-section" id="cep-pinned-section" style="display:none;">
       <div class="cep-section-title" style="display:flex;align-items:center;gap:6px">
         <svg class="cep-icon-svg" style="width:11px;height:11px;color:var(--cep-amber);fill:var(--cep-amber)" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-        Pinned Capsules
+        Pinned Tesseracts
       </div>
       <div id="cep-pinned-list" style="display:flex;flex-direction:column;margin-top:2px;"></div>
     </div>
@@ -3170,7 +3172,7 @@ async function showTray() {
       </div>
       <div style="display:flex;flex-direction:column;gap:5px;font-size:10.5px;color:var(--cep-t2);">
         <div style="display:flex;justify-content:space-between;align-items:center;">
-          <span>Extract Capsule:</span>
+          <span>Extract Tesseract:</span>
           <kbd style="background:var(--cep-s2);border:1px solid var(--cep-b);border-radius:4px;padding:1px 5px;font-family:monospace;font-size:10px;color:var(--cep-t);">Alt+Shift+E</kbd>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;">
@@ -3189,31 +3191,31 @@ async function showTray() {
 
   const el = id => tray.querySelector('#' + id);
 
-  // Populate pinned capsules list for quick drop
+  // Populate pinned tesseracts list for quick drop
   const renderPinnedList = async () => {
-    const r = await chrome.storage.local.get(["capsules"]);
-    const capsules = r.capsules || [];
-    const pinnedCaps = capsules.filter(c => c.pinned);
+    const r = await chrome.storage.local.get(["tesseracts", "cubes", "capsules"]);
+    const list = r.tesseracts || r.cubes || r.capsules || [];
+    const pinnedTesses = list.filter(c => c.pinned);
     const pinnedSec = el('cep-pinned-section');
     const pinnedList = el('cep-pinned-list');
     
-    if (pinnedCaps.length > 0) {
+    if (pinnedTesses.length > 0) {
       pinnedSec.style.display = 'block';
       pinnedList.innerHTML = '';
-      pinnedCaps.forEach(cap => {
+      pinnedTesses.forEach(tess => {
         const item = document.createElement('div');
         item.className = 'cep-pinned-item';
         item.innerHTML = `
           <div style="display:flex;align-items:center;gap:8px;overflow:hidden;flex:1;">
             <svg class="cep-icon-svg" style="width:12px;height:12px;color:var(--cep-amber);fill:var(--cep-amber);flex-shrink:0" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-            <span class="cep-pinned-name">${eh(cap.name)}</span>
+            <span class="cep-pinned-name">${eh(tess.name)}</span>
           </div>
-          <span style="font-size:9.5px;color:var(--cep-t3);margin-left:8px;flex-shrink:0;">${cap.platform || 'chat'}</span>
+          <span style="font-size:9.5px;color:var(--cep-t3);margin-left:8px;flex-shrink:0;">${tess.platform || 'chat'}</span>
         `;
         item.onclick = () => {
-          dropCapsule(cap);
+          dropTesseract(tess);
           closeTray();
-          toast("Capsule dropped!");
+          toast("Tesseract dropped!");
         };
         pinnedList.appendChild(item);
       });
@@ -3260,9 +3262,9 @@ async function showTray() {
     });
   };
 
-  // Section 2: Open capsules UI
+  // Section 2: Open tesseracts UI
   el('cep-btnOpenPopup').onclick = async () => {
-    await chrome.storage.local.set({ open_tab: "capsules" });
+    await chrome.storage.local.set({ open_tab: "tesseracts" });
     closeTray();
     chrome.runtime.sendMessage({ action: "openExtensionPopup" }).then(res => {
       if (!res || !res.success) {
@@ -3301,6 +3303,81 @@ async function showTray() {
         const cap = await runSilentExtraction(onProgress, useLLM);
         const transfer = {
           targetPlatform: target,
+          tesseract: cap,
+          capsule: cap,
+          timestamp: Date.now()
+        };
+        await chrome.storage.local.set({ pending_transfer: transfer });
+
+        const urls = {
+          claude: "https://claude.ai/new",
+          chatgpt: "https://chatgpt.com/",
+          gemini: "https://gemini.google.com/app",
+          grok: "https://grok.com/"
+        };
+        
+        // Wait 350ms so user sees the 100% completion bar
+        setTimeout(() => {
+          closeTray();
+          window.open(urls[target], "_blank");
+        }, 350);
+      } catch (e) {
+        console.error("[CEP] Teleport extraction failed:", e);
+        btn.innerHTML = origHtml;
+        progressEl.style.display = "none";
+        tray.querySelectorAll('.cep-tport-btn').forEach(b => b.disabled = false);
+        alert("Failed to extract chat: " + e.message);
+      }
+    };
+  });
+
+  document.body.appendChild(tray);e({ action: "openPopupTab" });
+      }
+    });
+  };
+
+  // Section 2: Open capsules UI
+  el('cep-btnOpenPopup').onclick = async () => {
+    await chrome.storage.local.set({ open_tab: "tesseracts" });
+    closeTray();
+    chrome.runtime.sendMessage({ action: "openExtensionPopup" }).then(res => {
+      if (!res || !res.success) {
+        chrome.runtime.sendMessage({ action: "openPopupTab" });
+      }
+    });
+  };
+
+  // Section 3: Teleport/Redirect buttons (with extraction)
+  tray.querySelectorAll('.cep-tport-btn').forEach(btn => {
+    btn.onclick = async () => {
+      const target = btn.dataset.target;
+      const origHtml = btn.innerHTML;
+      
+      // Disable all teleport buttons during extraction
+      tray.querySelectorAll('.cep-tport-btn').forEach(b => b.disabled = true);
+      
+      // Show progress bar
+      const progressEl = el('cep-tport-progress');
+      const statusText = el('cep-tport-status');
+      const percentText = el('cep-tport-percent');
+      const progressBar = el('cep-tport-bar');
+      
+      progressEl.style.display = "block";
+      
+      const onProgress = (status, percent) => {
+        statusText.textContent = status;
+        percentText.textContent = percent + "%";
+        progressBar.style.width = percent + "%";
+      };
+
+      onProgress("Initializing teleport...", 5);
+
+      try {
+        const useLLM = el('cep-llmEnabled').checked;
+        const cap = await runSilentExtraction(onProgress, useLLM);
+        const transfer = {
+          targetPlatform: target,
+          tesseract: cap,
           capsule: cap,
           timestamp: Date.now()
         };
@@ -3374,15 +3451,16 @@ async function checkPendingTransfer() {
         // Focus the input textbox to trigger lazy loading of toolbar and file input components
         try { input.focus(); } catch(_) {}
 
-        // If the capsule contains files, verify if we should wait for file input to appear
-        const hasFiles = (transfer.capsule.images && transfer.capsule.images.length > 0) || 
-                         (transfer.capsule.files && transfer.capsule.files.length > 0);
+        const tess = transfer.tesseract || transfer.capsule;
+        // If the tesseract contains files, verify if we should wait for file input to appear
+        const hasFiles = (tess.images && tess.images.length > 0) || 
+                         (tess.files && tess.files.length > 0);
         if (hasFiles && !querySelectorShadow('input[type="file"]')) {
           attempts++;
           if (attempts >= 15) { // 3 seconds timeout (15 * 200ms) for file input to appear
             clearInterval(interval);
-            console.log("[CEP] Text input found, but file input not found after 3 seconds. Proceeding to drop capsule anyway.");
-            dropCapsule(transfer.capsule);
+            console.log("[CEP] Text input found, but file input not found after 3 seconds. Proceeding to drop tesseract anyway.");
+            dropTesseract(tess);
           }
           return; // Keep waiting for file input
         }
@@ -3390,8 +3468,8 @@ async function checkPendingTransfer() {
         clearInterval(interval);
         console.log("[CEP] Pending transfer found, waiting 1.2s for editor to initialize event listeners...");
         setTimeout(() => {
-          console.log("[CEP] Dropping capsule now...");
-          dropCapsule(transfer.capsule);
+          console.log("[CEP] Dropping tesseract now...");
+          dropTesseract(tess);
         }, 1200);
       } else {
         attempts++;
@@ -3409,13 +3487,13 @@ async function checkPendingTransfer() {
 // Helper handlers for keyboard shortcuts (used by both commands listener and local keydown listener)
 async function handleQuickExtract() {
   try {
-    toast("🔄 Extracting capsule...");
-    const cap = await runSilentExtraction();
-    await saveCapsule(cap);
-    if (cap._imagesStripped) {
-      toast("⚠ Capsule saved (no images - storage full)", true);
+    toast("🔄 Extracting tesseract...");
+    const tess = await runSilentExtraction();
+    await saveTesseract(tess);
+    if (tess._imagesStripped) {
+      toast("⚠ Tesseract saved (no images - storage full)", true);
     } else {
-      toast(`✓ Saved: "${cap.name}"`);
+      toast(`✓ Saved: "${tess.name}"`);
     }
   } catch (e) {
     console.error("[CEP] Quick extract failed:", e);
@@ -3423,24 +3501,18 @@ async function handleQuickExtract() {
   }
 }
 
-async function handleDropLastCapsule() {
+async function handleDropLastTesseract() {
   try {
-    const r = await chrome.storage.local.get(["capsules"]);
-    const caps = r.capsules || [];
-    if (!caps.length) {
-      toast("❌ No capsules found to drop", true);
+    const list = await loadTesseracts();
+    if (!list.length) {
+      toast("❌ No tesseracts found to drop", true);
       return;
     }
-    caps.sort((a,b) => {
-      if (a.pinned && !b.pinned) return -1;
-      if (!a.pinned && b.pinned) return 1;
-      return new Date(b.createdAt) - new Date(a.createdAt);
-    });
-    const lastCap = caps[0];
-    await dropCapsule(lastCap);
-    toast(`✓ Dropped: "${lastCap.name}"`);
+    const lastTess = list[0];
+    await dropTesseract(lastTess);
+    toast(`✓ Dropped: "${lastTess.name}"`);
   } catch (e) {
-    console.error("[CEP] Drop last capsule failed:", e);
+    console.error("[CEP] Drop last tesseract failed:", e);
     toast("❌ Drop failed: " + e.message, true);
   }
 }
@@ -3474,20 +3546,28 @@ async function handleCopyChatText() {
 chrome.runtime.onMessage.addListener((req,_,send)=>{
   if (req.action==='ping')           {send({platform:PLAT,ready:true});return true;}
   if (req.action==='extract')        {extractAll().then(d=>send({success:true,data:d})).catch(e=>send({success:false,error:e.message}));return true;}
-  if (req.action==='showCapsuleTray'){
+  if (req.action==='showTesseractTray' || req.action==='showCapsuleTray'){
     showTray().then(() => send({ok:true}));
     return true;
   }
-  if (req.action==='dropCapsule')    {dropCapsule(req.capsule);send({ok:true});return true;}
-  if (req.action==='hideCapsuleTray'){if(tray){tray.remove();tray=null;}send({ok:true});return true;}
+  if (req.action==='dropTesseract' || req.action==='dropCapsule') {
+    dropTesseract(req.tesseract || req.capsule);
+    send({ok:true});
+    return true;
+  }
+  if (req.action==='hideTesseractTray' || req.action==='hideCapsuleTray'){
+    if(tray){tray.remove();tray=null;}
+    send({ok:true});
+    return true;
+  }
 
   if (req.action==='quickExtract') {
     handleQuickExtract().then(() => send({success:true})).catch(e => send({success:false,error:e.message}));
     return true;
   }
 
-  if (req.action==='dropLastCapsule') {
-    handleDropLastCapsule().then(() => send({success:true})).catch(e => send({success:false,error:e.message}));
+  if (req.action==='dropLastTesseract' || req.action==='dropLastCapsule') {
+    handleDropLastTesseract().then(() => send({success:true})).catch(e => send({success:false,error:e.message}));
     return true;
   }
 
@@ -3576,7 +3656,7 @@ document.addEventListener('keydown', (e) => {
       handleQuickExtract();
     } else if (key === 'd') {
       e.preventDefault();
-      handleDropLastCapsule();
+      handleDropLastTesseract();
     } else if (key === 'x') {
       e.preventDefault();
       handleCopyChatText();

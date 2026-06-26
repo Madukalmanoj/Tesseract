@@ -255,24 +255,24 @@ async function fetchChatGPTFile(fileId, authHeader, conversationId) {
 }
 
 // ── LLM API router ────────────────────────────────────────────────────────────
-async function handleLLMRefine({ provider, apiKey, chatText, capsuleName }) {
-  const system = `You are a master prompt engineer. Your task is to transform the provided raw chat transcript into a highly dense, reusable 'Context Capsule'.
-The goal of this capsule is to allow a user to drop it into a NEW AI chat session to perfectly resume work.
+async function handleLLMRefine({ provider, apiKey, chatText, tesseractName }) {
+  const system = `You are a master prompt engineer. Your task is to transform the provided raw chat transcript into a highly dense, reusable 'Context Tesseract'.
+The goal of this tesseract is to allow a user to drop it into a NEW AI chat session to perfectly resume work.
 
 CRITICAL RULES:
 1. DO NOT SUMMARIZE AWAY OR OMIT ANY DETAILS. Your goal is high information density, not compression by omission. Every single valuable detail, fact, name, score, timeline, number, code snippet, configuration, preference, and personal background detail mentioned in the transcript MUST be preserved in full.
 2. PRESERVE the current state of the project (e.g., current score, bugs being fixed, next steps).
 3. PRESERVE the user's name, identity, and personal background details if mentioned in the transcript, so the new AI session knows exactly who it is interacting with.
-4. Structure the capsule logically:
-   - # Context Capsule: [Name]
+4. Structure the tesseract logically:
+   - # Context Tesseract: [Name]
    - ## Project Goal: [1-2 sentences]
    - ## Current State & Metrics: [What has been achieved so far]
    - ## Technical Foundation: [Preserve critical code, libraries, and architecture]
    - ## Task to Continue: [What the AI needs to do next]
 5. If any section does not have any meaningful information in the raw transcript (e.g., no code/technical stack is mentioned, or no metrics exist yet), OMIT that section entirely. DO NOT output placeholder text (such as "None reported", "Not mentioned", "Initial stage", etc.) explaining that the information is missing.
 6. **PRESERVE CONVERSATIONAL FLOW & USER CHOICE**: In the 'Task to Continue' section, if the last response in the transcript ends with a question, choice, or request for clarification to the user (e.g., "Would you like me to explain X, Y, or Z?", "Should we implement A or B?"), do NOT formulate it as a command for the AI to start generating all options unilaterally. Instead, frame 'Task to Continue' to instruct the AI to ask the user which option they would like to proceed with, allowing the conversation to resume naturally.
-7. Do not include introductory or conversational filler. Output the capsule directly.`;
-  const user = `Capsule name: "${capsuleName || 'Extracted Chat'}"\n\nRaw chat:\n---\n${chatText.slice(0, 32000)}\n---\n\nTransform this into a detailed context capsule that preserves all details, technical code, and state.`;
+7. Do not include introductory or conversational filler. Output the tesseract directly.`;
+  const user = `Tesseract name: "${tesseractName || 'Extracted Chat'}"\n\nRaw chat:\n---\n${chatText.slice(0, 32000)}\n---\n\nTransform this into a detailed context tesseract that preserves all details, technical code, and state.`;
   if (provider === "anthropic") return callAnthropic(apiKey, system, user);
   if (provider === "groq")      return callGroq(apiKey, system, user);
   if (provider === "gemini")    return callGemini(apiKey, system, user);
@@ -380,10 +380,10 @@ chrome.commands.onCommand.addListener(async (command) => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab || !tab.id) return;
     
-    if (command === "extract-capsule") {
+    if (command === "extract-tesseract" || command === "extract-cube") {
       chrome.tabs.sendMessage(tab.id, { action: "quickExtract" });
-    } else if (command === "drop-last-capsule") {
-      chrome.tabs.sendMessage(tab.id, { action: "dropLastCapsule" });
+    } else if (command === "drop-last-tesseract" || command === "drop-last-cube") {
+      chrome.tabs.sendMessage(tab.id, { action: "dropLastTesseract" });
     } else if (command === "copy-chat") {
       chrome.tabs.sendMessage(tab.id, { action: "copyChatText" });
     }

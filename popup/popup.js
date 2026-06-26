@@ -60,21 +60,21 @@ async function init() {
   if (stored.open_tab === "settings") {
     await chrome.storage.local.remove(["open_tab"]);
     openSettings();
-  } else if (stored.open_tab === "capsules") {
+  } else if (stored.open_tab === "capsules" || stored.open_tab === "tesseracts") {
     await chrome.storage.local.remove(["open_tab"]);
-    const capsulesTab = document.querySelector('.tab[data-tab="capsules"]');
-    if (capsulesTab) {
-      capsulesTab.click();
+    const tesseractsTab = document.querySelector('.tab[data-tab="tesseracts"]');
+    if (tesseractsTab) {
+      tesseractsTab.click();
     }
-  } else if (location.hash === "#tab-capsules") {
-    const capsulesTab = document.querySelector('.tab[data-tab="capsules"]');
-    if (capsulesTab) {
-      capsulesTab.click();
+  } else if (location.hash === "#tab-capsules" || location.hash === "#tab-tesseracts") {
+    const tesseractsTab = document.querySelector('.tab[data-tab="tesseracts"]');
+    if (tesseractsTab) {
+      tesseractsTab.click();
     }
   } else if (location.hash === "#tab-settings") {
     openSettings();
   } else {
-    renderCapsuleList();
+    renderTesseractList();
   }
 
   if (stored.autoExtract) {
@@ -90,7 +90,7 @@ document.querySelectorAll(".tab").forEach(t => {
     document.querySelectorAll(".panel").forEach(x => x.classList.remove("active"));
     t.classList.add("active");
     $("tab-" + t.dataset.tab).classList.add("active");
-    if (t.dataset.tab === "capsules") renderCapsuleList();
+    if (t.dataset.tab === "tesseracts") renderTesseractList();
     if (t.dataset.tab === "extract") {
       const stored = await chrome.storage.local.get(["apiKeys"]);
       const key = stored.apiKeys?.[currentProvider] || "";
@@ -248,13 +248,13 @@ async function runExtractionFlow(shouldSave = false) {
     extractedData = res.data;
     updateProgressBar(true, "Processing messages & files...", 60);
 
-    // Auto-fill capsule name
+    // Auto-fill tesseract name
     if (!$("capNameInput").value) {
       const [t] = await chrome.tabs.query({ active: true, currentWindow: true });
       $("capNameInput").value = (t?.title || "Chat").replace(/ [-|].*$/, "").trim().slice(0, 50);
     }
 
-    const capsuleName = $("capNameInput").value.trim() || "Chat Capsule";
+    const tesseractName = $("capNameInput").value.trim() || "Chat Tesseract";
 
     // Check if the chat has any assistant/AI responses
     const hasAssistant = (extractedData.messages || []).some(m => m.role === 'assistant');
@@ -266,7 +266,7 @@ async function runExtractionFlow(shouldSave = false) {
       updateProgressBar(true, `Refining with ${currentProvider}...`, 80);
       try {
         const chatText = cleanForLLM(buildPlainText(extractedData));
-        const r2 = await chrome.runtime.sendMessage({ action: "llmRefine", provider: currentProvider, apiKey, chatText, capsuleName });
+        const r2 = await chrome.runtime.sendMessage({ action: "llmRefine", provider: currentProvider, apiKey, chatText, tesseractName });
         if (r2.error) throw new Error(r2.error);
         refinedText = r2.text;
       } catch(e) {
@@ -286,9 +286,9 @@ async function runExtractionFlow(shouldSave = false) {
       defaultPromptText = buildPlainText(extractedData);
     }
 
-    const cap = {
+    const tess = {
       id: Date.now().toString(),
-      name: capsuleName,
+      name: tesseractName,
       promptText: refinedText || defaultPromptText,
       rawText: buildPlainText(extractedData),
       images: (extractedData.allImages||[]).filter(i=>i.dataUrl),
@@ -299,14 +299,14 @@ async function runExtractionFlow(shouldSave = false) {
       llmRefined: !!refinedText,
     };
 
-    // Save capsule automatically only if requested
+    // Save tesseract automatically only if requested
     if (shouldSave) {
-      updateProgressBar(true, "Saving capsule...", 95);
-      await saveCapsule(cap);
+      updateProgressBar(true, "Saving tesseract...", 95);
+      await saveTesseract(tess);
     }
 
     renderExtractResults(extractedData, refinedText);
-    return cap;
+    return tess;
 
   } catch(e) {
     showStatus("extractStatus","err","Error: " + e.message);
@@ -335,13 +335,14 @@ $("btnExtract").addEventListener("click", async () => {
 document.querySelectorAll(".tport-btn").forEach(btn => {
   btn.addEventListener("click", async () => {
     const target = btn.dataset.target;
-    const cap = await runExtractionFlow(false);
-    if (!cap) return;
+    const tess = await runExtractionFlow(false);
+    if (!tess) return;
 
     // Store pending transfer
     const transfer = {
       targetPlatform: target,
-      capsule: cap,
+      tesseract: tess,
+      capsule: tess,
       timestamp: Date.now()
     };
     await chrome.storage.local.set({ pending_transfer: transfer });
@@ -417,7 +418,9 @@ function renderExtractResults(data, refinedText) {
 
   // Status
   const chipsOnly = files.filter(f => !f.dataUrl).length;
-  let statusParts = [`<svg class="icon-svg" style="width:12px;height:12px;color:var(--green);margin-right:2px;" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg> Capsule saved! ${msgs.length} messages`];
+  // Status
+  const chipsOnly = files.filter(f => !f.dataUrl).length;
+  let statusParts = [`<svg class="icon-svg" style="width:12px;height:12px;color:var(--green);margin-right:2px;" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg> Tesseract saved! ${msgs.length} messages`];
   if (goodImgs.length) statusParts.push(`${goodImgs.length} image${goodImgs.length>1?"s":""}`);
   else if (imgs.length) statusParts.push(`0/${imgs.length} images captured`);
   statusParts.push(`${files.length} file${files.length!==1?"s":""}`);
@@ -456,23 +459,23 @@ $("btnImgs").addEventListener("click", async () => {
   flash($("btnImgs"), `⬇ Saving ${imgs.length}…`);
 });
 
-// ── Capsules tab ──────────────────────────────────────────────────────────────
-$("capSearch").addEventListener("input", renderCapsuleList);
+// ── Tesseracts tab ──────────────────────────────────────────────────────────────
+$("capSearch").addEventListener("input", renderTesseractList);
 
 
 
 $("btnClearAll")?.addEventListener("click", async () => {
-  const caps = await loadCapsules();
-  if (!caps.length) return;
-  if (!confirm(`Are you sure you want to delete all ${caps.length} capsules?`)) return;
-  await deleteAllCapsules();
-  renderCapsuleList();
+  const tesses = await loadTesseracts();
+  if (!tesses.length) return;
+  if (!confirm(`Are you sure you want to delete all ${tesses.length} tesseracts?`)) return;
+  await deleteAllTesseracts();
+  renderTesseractList();
 });
 
-async function renderCapsuleList() {
-  const caps = await loadCapsules();
+async function renderTesseractList() {
+  const tesses = await loadTesseracts();
   const q = $("capSearch").value.trim().toLowerCase();
-  const filtered = q ? caps.filter(c => {
+  const filtered = q ? tesses.filter(c => {
     const haystack = [
       c.name,
       c.promptText,
@@ -481,7 +484,7 @@ async function renderCapsuleList() {
       ...(c.files || []).map(f => f.name || f.filename || '')
     ].filter(Boolean).join(' ').toLowerCase();
     return haystack.includes(q);
-  }) : caps;
+  }) : tesses;
 
   const list = $("capList");
   list.innerHTML = "";
@@ -492,44 +495,44 @@ async function renderCapsuleList() {
   }
 
   if (!filtered.length) {
-    list.innerHTML = `<div class="cap-empty">${caps.length ? "No matches." : "No capsules yet.\nExtract a chat to create one."}</div>`;
+    list.innerHTML = `<div class="cap-empty">${tesses.length ? "No matches." : "No tesseracts yet.\nExtract a chat to create one."}</div>`;
     return;
   }
 
-  filtered.forEach(cap => {
-    const imgCount  = (cap.images||[]).filter(i=>i.dataUrl).length;
-    const fileCount = (cap.files||[]).length;
-    const fileDataCount = (cap.files||[]).filter(f=>f.dataUrl).length;
+  filtered.forEach(tess => {
+    const imgCount  = (tess.images||[]).filter(i=>i.dataUrl).length;
+    const fileCount = (tess.files||[]).length;
+    const fileDataCount = (tess.files||[]).filter(f=>f.dataUrl).length;
 
     const card = document.createElement("div");
     card.className = "cap-card";
     card.innerHTML = `
-      <button class="cap-pin-btn ${cap.pinned ? 'pinned' : ''}" data-pin="${cap.id}" title="${cap.pinned ? 'Unpin capsule' : 'Pin capsule'}">
+      <button class="cap-pin-btn ${tess.pinned ? 'pinned' : ''}" data-pin="${tess.id}" title="${tess.pinned ? 'Unpin tesseract' : 'Pin tesseract'}">
         <svg class="icon-svg" style="width:12px;height:12px;" viewBox="0 0 24 24">
-          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" fill="${cap.pinned ? 'var(--amber)' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" fill="${tess.pinned ? 'var(--amber)' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </button>
       <div class="cap-name" style="display:flex;align-items:center;gap:6px;padding-right:20px">
         <svg class="icon-svg" style="width:12px;height:12px;transform:rotate(-45deg);color:var(--acc)" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="5" ry="5"></rect><line x1="12" y1="7" x2="12" y2="17"></line></svg>
-        ${esc(cap.name)}
+        ${esc(tess.name)}
       </div>
       <div class="cap-meta" style="display:flex;align-items:center;gap:8px">
-        <span>${cap.platform || "chat"}</span>
-        ${cap.llmRefined ? `<span style="color:var(--acc);display:flex;align-items:center;gap:3px"><svg class="icon-svg" style="width:10px;height:10px;color:var(--acc)" viewBox="0 0 24 24"><path d="M12 2L15 9L22 12L15 15L12 22L9 15L2 12L9 9Z"></path></svg>refined</span>` : ""}
+        <span>${tess.platform || "chat"}</span>
+        ${tess.llmRefined ? `<span style="color:var(--acc);display:flex;align-items:center;gap:3px"><svg class="icon-svg" style="width:10px;height:10px;color:var(--acc)" viewBox="0 0 24 24"><path d="M12 2L15 9L22 12L15 15L12 22L9 15L2 12L9 9Z"></path></svg>refined</span>` : ""}
         ${imgCount  ? `<span style="display:flex;align-items:center;gap:3px"><svg class="icon-svg" style="width:11px;height:11px" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg> ${imgCount}</span>` : ""}
         ${fileCount ? `<span style="display:flex;align-items:center;gap:3px"><svg class="icon-svg" style="width:11px;height:11px" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg> ${fileDataCount}/${fileCount}</span>` : ""}
-        <span style="margin-left:auto">${fmtDate(cap.createdAt)}</span>
+        <span style="margin-left:auto">${fmtDate(tess.createdAt)}</span>
       </div>
       <div class="cap-actions">
-        <button class="cap-act drop" data-id="${cap.id}" style="display:flex;align-items:center;justify-content:center;gap:4px">
+        <button class="cap-act drop" data-id="${tess.id}" style="display:flex;align-items:center;justify-content:center;gap:4px">
           <svg class="icon-svg" style="width:11px;height:11px" viewBox="0 0 24 24"><path d="M12 5v14M19 12l-7 7-7-7"></path></svg>
           Drop
         </button>
-        <button class="cap-act" data-copy="${cap.id}" style="display:flex;align-items:center;justify-content:center;gap:4px">
+        <button class="cap-act" data-copy="${tess.id}" style="display:flex;align-items:center;justify-content:center;gap:4px">
           <svg class="icon-svg" style="width:11px;height:11px" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
           Copy
         </button>
-        <button class="cap-act del" data-del="${cap.id}" style="display:flex;align-items:center;justify-content:center;gap:4px">
+        <button class="cap-act del" data-del="${tess.id}" style="display:flex;align-items:center;justify-content:center;gap:4px">
           <svg class="icon-svg" style="width:11px;height:11px;color:var(--red)" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
         </button>
       </div>
@@ -537,22 +540,22 @@ async function renderCapsuleList() {
 
     card.querySelector("[data-id]").addEventListener("click", async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      await chrome.tabs.sendMessage(tab.id, { action: "dropCapsule", capsule: cap });
+      await chrome.tabs.sendMessage(tab.id, { action: "dropTesseract", tesseract: tess, capsule: tess });
       window.close();
     });
     card.querySelector("[data-copy]").addEventListener("click", async () => {
-      await navigator.clipboard.writeText(cap.promptText || cap.rawText || "");
+      await navigator.clipboard.writeText(tess.promptText || tess.rawText || "");
       flash(card.querySelector("[data-copy]"), "✓");
     });
     card.querySelector("[data-pin]").addEventListener("click", async (e) => {
       e.stopPropagation();
-      await togglePinCapsule(cap.id);
-      renderCapsuleList();
+      await togglePinTesseract(tess.id);
+      renderTesseractList();
     });
     card.querySelector("[data-del]").addEventListener("click", async () => {
-      if (!confirm(`Delete "${cap.name}"?`)) return;
-      await deleteCapsule(cap.id);
-      renderCapsuleList();
+      if (!confirm(`Delete "${tess.name}"?`)) return;
+      await deleteTesseract(tess.id);
+      renderTesseractList();
     });
 
     list.appendChild(card);
@@ -560,61 +563,60 @@ async function renderCapsuleList() {
 }
 
 // ── Storage ───────────────────────────────────────────────────────────────────
-async function loadCapsules() {
-  const r = await chrome.storage.local.get(["capsules"]);
-  return (r.capsules || []).sort((a,b) => {
+async function loadTesseracts() {
+  const r = await chrome.storage.local.get(["tesseracts", "cubes", "capsules"]);
+  const list = r.tesseracts || r.cubes || r.capsules || [];
+  return list.sort((a,b) => {
     if (a.pinned && !b.pinned) return -1;
     if (!a.pinned && b.pinned) return 1;
     return new Date(b.createdAt) - new Date(a.createdAt);
   });
 }
-async function togglePinCapsule(id) {
-  const r = await chrome.storage.local.get(["capsules"]);
-  const caps = r.capsules || [];
-  const updated = caps.map(c => {
+async function togglePinTesseract(id) {
+  const r = await chrome.storage.local.get(["tesseracts", "cubes", "capsules"]);
+  const list = r.tesseracts || r.cubes || r.capsules || [];
+  const updated = list.map(c => {
     if (c.id === id) {
       return { ...c, pinned: !c.pinned };
     }
     return c;
   });
-  await chrome.storage.local.set({ capsules: updated });
+  await chrome.storage.local.set({ tesseracts: updated });
 }
-async function saveCapsule(cap) {
-  // Log capsule size for debugging
-  const imgCount = (cap.images||[]).filter(i=>i.dataUrl).length;
-  const capSize = JSON.stringify(cap).length;
-  console.log(`[CEP] Saving capsule "${cap.name}": ${imgCount} images, ~${(capSize/1024).toFixed(0)}KB`);
+async function saveTesseract(tess) {
+  const imgCount = (tess.images||[]).filter(i=>i.dataUrl).length;
+  const size = JSON.stringify(tess).length;
+  console.log(`[CEP] Saving tesseract "${tess.name}": ${imgCount} images, ~${(size/1024).toFixed(0)}KB`);
 
-  const r = await chrome.storage.local.get(["capsules"]);
-  const caps = r.capsules || [];
-  caps.push(cap);
-  while (caps.length > 50) caps.shift();
+  const r = await chrome.storage.local.get(["tesseracts", "cubes", "capsules"]);
+  const list = r.tesseracts || r.cubes || r.capsules || [];
+  list.push(tess);
+  while (list.length > 50) list.shift();
   try {
-    await chrome.storage.local.set({ capsules: caps });
-    // Verify images survived storage round-trip
-    const verify = await chrome.storage.local.get(["capsules"]);
-    const saved = (verify.capsules||[]).find(c => c.id === cap.id);
+    await chrome.storage.local.set({ tesseracts: list });
+    const verify = await chrome.storage.local.get(["tesseracts"]);
+    const savedList = verify.tesseracts || [];
+    const saved = savedList.find(c => c.id === tess.id);
     const savedImgs = saved ? (saved.images||[]).filter(i=>i.dataUrl).length : 0;
     if (savedImgs < imgCount) {
       console.warn(`[CEP] Storage lost images! Saved ${savedImgs}/${imgCount}. Storage quota may be exceeded.`);
     }
   } catch(e) {
     console.error('[CEP] Storage save failed:', e);
-    // Try saving without images as fallback, then store images separately
-    cap._imagesStripped = true;
-    const stripped = {...cap, images: []};
-    caps[caps.length - 1] = stripped;
-    await chrome.storage.local.set({ capsules: caps });
-    showStatus("extractStatus","warn","⚠ Storage full — capsule saved without images. Try deleting old capsules.");
+    tess._imagesStripped = true;
+    const stripped = {...tess, images: []};
+    list[list.length - 1] = stripped;
+    await chrome.storage.local.set({ tesseracts: list });
+    showStatus("extractStatus","warn","⚠ Storage full — tesseract saved without images. Try deleting old tesseracts.");
   }
 }
-async function deleteCapsule(id) {
-  const r = await chrome.storage.local.get(["capsules"]);
-  const caps = (r.capsules||[]).filter(c => c.id !== id);
-  await chrome.storage.local.set({ capsules: caps });
+async function deleteTesseract(id) {
+  const r = await chrome.storage.local.get(["tesseracts", "cubes", "capsules"]);
+  const list = (r.tesseracts || r.cubes || r.capsules || []).filter(c => c.id !== id);
+  await chrome.storage.local.set({ tesseracts: list });
 }
-async function deleteAllCapsules() {
-  await chrome.storage.local.set({ capsules: [] });
+async function deleteAllTesseracts() {
+  await chrome.storage.local.set({ tesseracts: [] });
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

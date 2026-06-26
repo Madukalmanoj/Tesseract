@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "OmniExtract",
   "version": "3.2.0",
-  "description": "Extract chats → auto-refine with LLM → save as capsules → drop into any chat",
+  "description": "Extract chats → auto-refine with LLM → save as tesseracts → drop into any chat",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -111,17 +111,17 @@
     }
   ],
   "commands": {
-    "extract-capsule": {
+    "extract-tesseract": {
       "suggested_key": {
         "default": "Alt+Shift+E"
       },
-      "description": "Extract & save capsule instantly"
+      "description": "Extract & save context tesseract instantly"
     },
-    "drop-last-capsule": {
+    "drop-last-tesseract": {
       "suggested_key": {
         "default": "Alt+Shift+D"
       },
-      "description": "Drop last capsule into current chat"
+      "description": "Drop last context tesseract into current chat"
     },
     "copy-chat": {
       "suggested_key": {

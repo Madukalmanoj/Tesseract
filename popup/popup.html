@@ -246,22 +246,20 @@ input:checked + .slider:before{transform:translateX(14px);background-color:#fff}
   <div class="hdr-info"><h1>OmniExtract</h1><p>Extract · Refine · Drop</p></div>
   <span class="plat" id="platBadge">—</span>
   <button id="btnSettings" title="LLM Settings" style="background:none;border:none;color:var(--t3);cursor:pointer;display:flex;align-items:center;justify-content:center;margin-left:5px;transition:color .15s">
-    <svg class="icon-svg" style="width:16px;height:16px" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+    <svg class="icon-svg" style="width:16px;height:16px" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
   </button>
-</div>
-
-<div class="tabs">
+</div><div class="tabs">
   <button class="tab active" data-tab="extract">
     <svg class="icon-svg" style="width:12px;height:12px;" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
     Extract
   </button>
-  <button class="tab" data-tab="capsules">
+  <button class="tab" data-tab="tesseracts">
     <svg class="icon-svg" style="width:12px;height:12px;transform:rotate(-45deg)" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="5" ry="5"></rect><line x1="12" y1="7" x2="12" y2="17"></line></svg>
-    Capsules
+    Tesseracts
   </button>
 </div>
 
-<!-- ══════════════════════ EXTRACT TAB ══════════════════════ -->
+<!-- ── Extract Tab ── -->
 <div class="panel active" id="tab-extract">
 
   <!-- LLM Auto-Refine section (just toggle switch) -->
@@ -276,14 +274,14 @@ input:checked + .slider:before{transform:translateX(14px);background-color:#fff}
     </div>
   </div>
 
-  <!-- Capsule name -->
+  <!-- Tesseract name -->
   <div class="capsule-name-row" style="margin-bottom:12px">
-    <input type="text" id="capNameInput" placeholder="Capsule name (auto-filled)…"/>
+    <input type="text" id="capNameInput" placeholder="Tesseract name (auto-filled)…"/>
   </div>
 
   <button class="btn btn-primary" id="btnExtract" style="display:flex;align-items:center;justify-content:center;gap:6px">
     <svg class="icon-svg" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
-    Extract + Save Capsule
+    Extract + Save Tesseract
   </button>
   
   <!-- Progress Bar Container -->
@@ -361,10 +359,10 @@ input:checked + .slider:before{transform:translateX(14px);background-color:#fff}
   </div>
 </div>
 
-<!-- ══════════════════════ CAPSULES TAB ══════════════════════ -->
-<div class="panel" id="tab-capsules">
+<!-- ══════════════════════ TESSERACTS TAB ══════════════════════ -->
+<div class="panel" id="tab-tesseracts">
   <div class="cap-toolbar">
-    <input class="cap-search" id="capSearch" type="text" placeholder="Search capsules…"/>
+    <input class="cap-search" id="capSearch" type="text" placeholder="Search tesseracts…"/>
   </div>
   <div style="display:flex;justify-content:flex-end;margin:6px 0 8px">
     <button id="btnClearAll" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:11px;font-weight:600;display:flex;align-items:center;gap:4px">
@@ -413,7 +411,7 @@ input:checked + .slider:before{transform:translateX(14px);background-color:#fff}
     </div>
     <div style="display:flex; flex-direction:column; gap:8px; font-size:11.5px; color:var(--t2)">
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span>Extract Capsule:</span>
+        <span>Extract Tesseract:</span>
         <kbd style="background:var(--s2); border:1px solid var(--b2); border-radius:4px; padding:2px 6px; font-family:monospace; font-size:10.5px; color:var(--t)">Alt+Shift+E</kbd>
       </div>
       <div style="display:flex; justify-content:space-between; align-items:center;">
