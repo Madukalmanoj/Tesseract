@@ -2853,6 +2853,18 @@ async function showTray() {
     <!-- ── SECTION 3: DIRECT REDIRECT ── -->
     <div class="cep-section">
       <div class="cep-section-title">🚀 Go to Platform</div>
+
+      <!-- Thin CSS Progress Bar -->
+      <div id="cep-tport-progress" style="display:none; margin-bottom:12px; background:var(--cep-s1); border:1px solid var(--cep-b); border-radius:var(--cep-r); padding:8px 10px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+          <span id="cep-tport-status" style="font-size:11px; color:var(--cep-t2); font-weight:500;">Preparing...</span>
+          <span id="cep-tport-percent" style="font-size:11px; font-weight:bold; color:var(--cep-acc);">0%</span>
+        </div>
+        <div style="background:var(--cep-s2); height:4px; border-radius:2px; overflow:hidden;">
+          <div id="cep-tport-bar" style="background:linear-gradient(90deg, var(--cep-acc), var(--cep-acc2)); width:0%; height:100%; transition:width 0.15s ease;"></div>
+        </div>
+      </div>
+
       <div class="cep-teleport-grid">
         <button class="cep-tport-btn claude" data-target="claude" title="Go to Claude">
           <span style="font-size:14px">🟠</span> Claude
@@ -2923,18 +2935,22 @@ async function showTray() {
   };
 
   // Helper for silent extraction for direct teleport redirects
-  async function runSilentExtraction() {
+  async function runSilentExtraction(onProgress) {
     const useLLM = el('cep-llmEnabled').checked;
     const storageData = await chrome.storage.local.get(["apiKeys", "lastProvider"]);
     const prov = storageData.lastProvider || "groq";
     const apiKey = storageData.apiKeys?.[prov] || "";
 
+    if (onProgress) onProgress("Extracting chat details...", 15);
     const extracted = await extractAll();
+    
+    if (onProgress) onProgress("Parsing conversation...", 40);
     const capsuleName = (document.title || "Chat").replace(/ [-|].*$/, "").trim().slice(0, 50) || "Chat Capsule";
     const hasAssistant = (extracted.messages || []).some(m => m.role === 'assistant');
 
     let refinedText = null;
     if (useLLM && hasAssistant && apiKey) {
+      if (onProgress) onProgress(`Refining with ${prov.toUpperCase()}...`, 60);
       try {
         const chatText = cleanForLLM(buildPlainText(extracted));
         const r2 = await chrome.runtime.sendMessage({ action: "llmRefine", provider: prov, apiKey, chatText, capsuleName });
@@ -2946,6 +2962,7 @@ async function showTray() {
       }
     }
 
+    if (onProgress) onProgress("Packaging context...", 90);
     let defaultPromptText;
     if (!hasAssistant) {
       defaultPromptText = (extracted.messages || [])
@@ -2955,6 +2972,8 @@ async function showTray() {
     } else {
       defaultPromptText = buildPlainText(extracted);
     }
+
+    if (onProgress) onProgress("Capsule ready!", 100);
 
     return {
       id: Date.now().toString(),
@@ -2978,10 +2997,25 @@ async function showTray() {
       
       // Disable all teleport buttons during extraction
       tray.querySelectorAll('.cep-tport-btn').forEach(b => b.disabled = true);
-      btn.innerHTML = `<span class="cep-spin"></span> Teleporting...`;
+      
+      // Show progress bar
+      const progressEl = el('cep-tport-progress');
+      const statusText = el('cep-tport-status');
+      const percentText = el('cep-tport-percent');
+      const progressBar = el('cep-tport-bar');
+      
+      progressEl.style.display = "block";
+      
+      const onProgress = (status, percent) => {
+        statusText.textContent = status;
+        percentText.textContent = percent + "%";
+        progressBar.style.width = percent + "%";
+      };
+
+      onProgress("Initializing teleport...", 5);
 
       try {
-        const cap = await runSilentExtraction();
+        const cap = await runSilentExtraction(onProgress);
         const transfer = {
           targetPlatform: target,
           capsule: cap,
@@ -2995,11 +3029,16 @@ async function showTray() {
           gemini: "https://gemini.google.com/app",
           grok: "https://grok.com/"
         };
-        closeTray();
-        window.open(urls[target], "_blank");
+        
+        // Wait 350ms so user sees the 100% completion bar
+        setTimeout(() => {
+          closeTray();
+          window.open(urls[target], "_blank");
+        }, 350);
       } catch (e) {
         console.error("[CEP] Teleport extraction failed:", e);
         btn.innerHTML = origHtml;
+        progressEl.style.display = "none";
         tray.querySelectorAll('.cep-tport-btn').forEach(b => b.disabled = false);
         alert("Failed to extract chat: " + e.message);
       }
