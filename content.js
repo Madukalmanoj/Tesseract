@@ -2806,7 +2806,7 @@ function buildPlainText(data) {
   return lines.join("\n").replace(/\n{4,}/g, '\n\n\n');
 }
 
-async function showTray(caps, llmEnabled) {
+async function showTray() {
   if (tray) tray.remove();
   tray = document.createElement('div');
   tray.id = 'cep-tray';
@@ -2817,25 +2817,23 @@ async function showTray(caps, llmEnabled) {
         <div class="cep-logo-symbol">⬡</div>
         <div class="cep-hdr-info">
           <h1>OmniExtract</h1>
-          <p>Extract · Refine · Drop</p>
+          <p>Launcher</p>
         </div>
       </div>
-      <span class="cep-plat ${PLAT === 'claude' ? 'claude' : PLAT === 'chatgpt' ? 'chatgpt' : PLAT === 'gemini' ? 'gemini' : PLAT === 'grok' ? 'grok' : ''}" id="cep-platBadge">${PLAT === 'claude' ? 'Claude' : PLAT === 'chatgpt' ? 'ChatGPT' : PLAT === 'gemini' ? 'Gemini' : PLAT === 'grok' ? 'Grok' : '—'}</span>
       <button id="cep-tc">✕</button>
     </div>
 
     <!-- ── SCROLLABLE BODY ── -->
     <div id="cep-tray-body">
 
-    <!-- ── SECTION 1: EXTRACT ── -->
+    <!-- ── SECTION 1: EXTRACT & SAVE ── -->
     <div class="cep-section">
-      <div class="cep-section-title">⚡ Extract Chat</div>
+      <div class="cep-section-title">⚡ Extract & Save</div>
       
       <!-- LLM Auto-Refine section (simple toggle switch) -->
       <div class="cep-llm-section" id="cep-llmSection" style="margin-bottom: 12px; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; background: var(--cep-s1); border: 1px solid var(--cep-b); border-radius: var(--cep-r);">
         <span style="color: var(--cep-t2); font-weight: 600; font-size: 12.5px;">Auto-refine with LLM</span>
         <div style="display:flex;align-items:center;gap:8px">
-          <span id="cep-llmProviderBadge" style="font-size:10px;color:var(--cep-t3);text-transform:uppercase;font-weight:600;line-height:1;"></span>
           <label class="cep-switch">
             <input type="checkbox" id="cep-llmEnabled">
             <span class="cep-slider"></span>
@@ -2843,62 +2841,29 @@ async function showTray(caps, llmEnabled) {
         </div>
       </div>
 
-      <!-- Capsule name -->
-      <div class="cep-capsule-name-row" style="margin-bottom:12px">
-        <input type="text" id="cep-capNameInput" placeholder="Capsule name (auto-filled)…"/>
-      </div>
-
-      <button class="cep-btn cep-btn-primary" id="cep-btnExtract">⬡ Extract + Save Capsule</button>
-      <div class="cep-status" id="cep-extractStatus" style="display:none"></div>
-
-      <!-- Extraction Results -->
-      <div id="cep-extractResults" style="display:none">
-        <div class="cep-stats">
-          <div class="cep-stat"><div class="cep-v" id="cep-sMsg">0</div><div class="cep-k">Messages</div></div>
-          <div class="cep-stat"><div class="cep-v" id="cep-sImg">0</div><div class="cep-k">Images</div></div>
-          <div class="cep-stat"><div class="cep-v" id="cep-sFile">0</div><div class="cep-k">Files</div></div>
-        </div>
-
-        <!-- File list -->
-        <div class="cep-file-list" id="cep-fileList" style="display:none">
-          <div class="cep-file-list-hdr">Attached Files</div>
-          <div id="cep-fileItems"></div>
-        </div>
-
-        <div class="cep-actgrid" style="margin-top:10px">
-          <button class="cep-abtn" id="cep-btnCopy">📋 Copy Text</button>
-          <button class="cep-abtn" id="cep-btnTxt">⬇ Save .txt</button>
-          <button class="cep-abtn" id="cep-btnJson">⬇ Save JSON</button>
-          <button class="cep-abtn" id="cep-btnImgs" disabled>🖼 Save Images</button>
-        </div>
-
-        <div class="cep-img-preview" id="cep-imgPreview" style="display:none">
-          <div class="cep-img-preview-hdr"><span>Images</span><span id="cep-imgPreviewCount" style="color:var(--cep-acc)"></span></div>
-          <div class="cep-img-grid" id="cep-imgGrid"></div>
-        </div>
-      </div>
+      <button class="cep-btn cep-btn-primary" id="cep-btnExtract">⚡ Extract & Save Capsule</button>
     </div>
 
     <!-- ── SECTION 2: DROP CAPSULE ── -->
     <div class="cep-section">
-      <div class="cep-section-title">💊 Capsules</div>
-      <button class="cep-btn cep-btn-secondary" id="cep-btnOpenPopup">💊 Open Capsules / Extension UI</button>
+      <div class="cep-section-title">💊 Drop Capsule</div>
+      <button class="cep-btn cep-btn-secondary" id="cep-btnOpenPopup">💊 Open Capsules Tab</button>
     </div>
 
-    <!-- ── SECTION 3: TELEPORT ── -->
+    <!-- ── SECTION 3: DIRECT REDIRECT ── -->
     <div class="cep-section">
-      <div class="cep-section-title">🚀 Teleport & Send Context</div>
+      <div class="cep-section-title">🚀 Go to Platform</div>
       <div class="cep-teleport-grid">
-        <button class="cep-tport-btn claude" data-target="claude" title="Teleport to Claude">
+        <button class="cep-tport-btn claude" data-target="claude" title="Go to Claude">
           <span style="font-size:14px">🟠</span> Claude
         </button>
-        <button class="cep-tport-btn chatgpt" data-target="chatgpt" title="Teleport to ChatGPT">
+        <button class="cep-tport-btn chatgpt" data-target="chatgpt" title="Go to ChatGPT">
           <span style="font-size:14px">🟢</span> ChatGPT
         </button>
-        <button class="cep-tport-btn gemini" data-target="gemini" title="Teleport to Gemini">
+        <button class="cep-tport-btn gemini" data-target="gemini" title="Go to Gemini">
           <span style="font-size:14px">✦</span> Gemini
         </button>
-        <button class="cep-tport-btn grok" data-target="grok" title="Teleport to Grok">
+        <button class="cep-tport-btn grok" data-target="grok" title="Go to Grok">
           <span style="font-size:14px">⚡</span> Grok
         </button>
       </div>
@@ -2916,6 +2881,30 @@ async function showTray(caps, llmEnabled) {
     document.getElementById('cep-launcher')?.classList.remove('cep-open');
   };
 
+  // Restore LLM enabled state
+  const stored = await chrome.storage.local.get(["llmEnabled"]);
+  if (stored.llmEnabled) {
+    el('cep-llmEnabled').checked = true;
+  }
+
+  // LLM toggle checkbox listener
+  el('cep-llmEnabled').onchange = async () => {
+    const on = el('cep-llmEnabled').checked;
+    await chrome.storage.local.set({ llmEnabled: on });
+  };
+
+  // Section 1: Extract & Save button
+  el('cep-btnExtract').onclick = async () => {
+    const on = el('cep-llmEnabled').checked;
+    await chrome.storage.local.set({ llmEnabled: on, autoExtract: true });
+    
+    chrome.runtime.sendMessage({ action: "openExtensionPopup" }).then(res => {
+      if (!res || !res.success) {
+        chrome.runtime.sendMessage({ action: "openPopupTab" });
+      }
+    });
+  };
+
   // Section 2: Open capsules UI
   el('cep-btnOpenPopup').onclick = async () => {
     await chrome.storage.local.set({ open_tab: "capsules" });
@@ -2926,268 +2915,10 @@ async function showTray(caps, llmEnabled) {
     });
   };
 
-  // Load LLM states & provider configuration
-  let extractedData = null;
-
-  const stored = await chrome.storage.local.get(["lastProvider", "llmEnabled"]);
-  const currentProvider = stored.lastProvider || "groq";
-
-  function updateProviderBadge() {
-    const on = el('cep-llmEnabled').checked;
-    el('cep-llmProviderBadge').textContent = on ? currentProvider : "";
-  }
-
-  // Restore LLM enabled state
-  if (stored.llmEnabled) {
-    el('cep-llmEnabled').checked = true;
-    updateProviderBadge();
-  }
-
-  // LLM toggle checkbox listener
-  el('cep-llmEnabled').onchange = async () => {
-    const on = el('cep-llmEnabled').checked;
-    if (on) {
-      const storageData = await chrome.storage.local.get(["apiKeys", "lastProvider"]);
-      const prov = storageData.lastProvider || "groq";
-      const apiKey = storageData.apiKeys?.[prov] || "";
-      if (!apiKey) {
-        el('cep-llmEnabled').checked = false;
-        toast(`⚠️ Please configure your ${prov.toUpperCase()} API key first.`, true);
-        await chrome.storage.local.set({ open_tab: "settings" });
-        chrome.runtime.sendMessage({ action: "openExtensionPopup" }).then(res => {
-          if (!res || !res.success) {
-            chrome.runtime.sendMessage({ action: "openPopupTab" });
-          }
-        });
-        return;
-      }
-    }
-    // Clear any stale warning/error if LLM toggle succeeds or is turned off
-    const statusEl = el('cep-extractStatus');
-    if (statusEl) {
-      statusEl.style.display = "none";
-      statusEl.innerHTML = "";
-    }
-    chrome.storage.local.set({ llmEnabled: on });
-    updateProviderBadge();
-  };
-
-  // Section 1: Extraction Flow
-  async function runExtractionFlow(shouldSave = false) {
-    extractedData = null;
-    el('cep-extractResults').style.display = "none";
-    el('cep-imgPreview').style.display = "none";
-    el('cep-fileList').style.display = "none";
-    el('cep-imgGrid').innerHTML = "";
-    el('cep-fileItems').innerHTML = "";
-
-    const useLLM = el('cep-llmEnabled').checked;
-    const storageData = await chrome.storage.local.get(["apiKeys", "lastProvider"]);
-    const prov = storageData.lastProvider || "groq";
-    const apiKey = storageData.apiKeys?.[prov] || "";
-
-    if (useLLM && !apiKey) {
-      showStatus("cep-extractStatus", "err", `LLM is enabled — please configure your ${prov} API key in the extension popup first.`);
-      return null;
-    }
-
-    showStatus("cep-extractStatus", "info", '<span class="cep-spin"></span>Extracting chat…');
-    el('cep-btnExtract').disabled = true;
-    tray.querySelectorAll('.cep-tport-btn').forEach(b => b.disabled = true);
-
-    try {
-      const extracted = await extractAll();
-      extractedData = extracted;
-
-      if (!el('cep-capNameInput').value) {
-        el('cep-capNameInput').value = (document.title || "Chat").replace(/ [-|].*$/, "").trim().slice(0, 50);
-      }
-
-      const capsuleName = el('cep-capNameInput').value.trim() || "Chat Capsule";
-      const hasAssistant = (extractedData.messages || []).some(m => m.role === 'assistant');
-
-      let refinedText = null;
-      let refineError = null;
-      if (useLLM && hasAssistant) {
-        showStatus("cep-extractStatus", "info", `<span class="cep-spin"></span>Extracting… then refining with ${prov}…`);
-        try {
-          const chatText = cleanForLLM(buildPlainText(extractedData));
-          const r2 = await chrome.runtime.sendMessage({ action: "llmRefine", provider: prov, apiKey, chatText, capsuleName });
-          if (!r2) throw new Error("No response from background service worker.");
-          if (r2.error) throw new Error(r2.error);
-          refinedText = r2.text;
-        } catch(e) {
-          refineError = e.message;
-          console.error("[CEP] LLM refine failed:", e);
-        }
-      }
-
-      let defaultPromptText;
-      if (!hasAssistant) {
-        defaultPromptText = (extractedData.messages || [])
-          .map(m => cleanForLLM(m.text))
-          .filter(Boolean)
-          .join('\n\n');
-      } else {
-        defaultPromptText = buildPlainText(extractedData);
-      }
-
-      const cap = {
-        id: Date.now().toString(),
-        name: capsuleName,
-        promptText: refinedText || defaultPromptText,
-        rawText: buildPlainText(extractedData),
-        images: (extractedData.allImages || []).filter(i => i.dataUrl),
-        files: (extractedData.allFiles || []),
-        platform: extractedData.platform,
-        sourceUrl: extractedData.url,
-        createdAt: new Date().toISOString(),
-        llmRefined: !!refinedText
-      };
-
-      if (shouldSave) {
-        await saveCapsule(cap);
-      }
-
-      renderExtractResults(extractedData, refinedText, refineError);
-      return cap;
-
-    } catch(e) {
-      showStatus("cep-extractStatus", "err", "Error: " + e.message);
-      return null;
-    } finally {
-      el('cep-btnExtract').disabled = false;
-      tray.querySelectorAll('.cep-tport-btn').forEach(b => b.disabled = false);
-    }
-  }
-
-  el('cep-btnExtract').onclick = async () => {
-    await runExtractionFlow(true);
-  };
-
-  function renderExtractResults(data, refinedText, refineError) {
-    const msgs  = data.messages || [];
-    const imgs  = data.allImages || [];
-    const files = data.allFiles || [];
-
-    el('cep-sMsg').textContent  = msgs.length;
-    el('cep-sImg').textContent  = imgs.length;
-    el('cep-sFile').textContent = files.length;
-
-    // Files
-    if (files.length) {
-      el('cep-fileList').style.display = "block";
-      el('cep-fileItems').innerHTML = "";
-      files.forEach(f => {
-        const ext = f.name.split(".").pop()?.toLowerCase() || "";
-        const icon = ext === "pdf" ? "📄" : ext === "zip" ? "🗜" : ["doc","docx"].includes(ext) ? "📝" : ["xls","xlsx"].includes(ext) ? "📊" : "📎";
-        const hasData = !!f.dataUrl;
-        const div = document.createElement("div");
-        div.className = "cep-file-item" + (hasData ? " clickable" : "");
-        if (hasData) {
-          div.title = "Click to download " + f.name;
-          div.onclick = () => {
-            chrome.runtime.sendMessage({ action: "downloadDataUrl", dataUrl: f.dataUrl, filename: f.name });
-          };
-        }
-        div.innerHTML = `
-          <span class="cep-file-icon">${icon}</span>
-          <span class="cep-file-name" title="${esc(f.name)}">${esc(f.name)}</span>
-          <span class="cep-file-badge ${hasData ? 'ok' : 'chip'}">${hasData ? "✓ data" : "name only"}</span>
-        `;
-        el('cep-fileItems').appendChild(div);
-      });
-    }
-
-    // Images
-    const goodImgs = imgs.filter(i => i.dataUrl);
-    const failedImgs = imgs.filter(i => i.error);
-    if (goodImgs.length) {
-      el('cep-imgPreview').style.display = "block";
-      el('cep-imgPreviewCount').textContent = goodImgs.length + " ready";
-      goodImgs.forEach(img => {
-        const d = document.createElement("div"); d.className = "cep-img-thumb";
-        const imgEl = document.createElement("img"); imgEl.src = img.dataUrl;
-        d.appendChild(imgEl); el('cep-imgGrid').appendChild(d);
-      });
-      el('cep-btnImgs').disabled = false;
-    } else {
-      el('cep-btnImgs').disabled = true;
-    }
-
-    // Status
-    const chipsOnly = files.filter(f => !f.dataUrl).length;
-    let statusParts = [`✓ Capsule saved! ${msgs.length} messages`];
-    if (goodImgs.length) statusParts.push(`${goodImgs.length} image${goodImgs.length>1?"s":""}`);
-    else if (imgs.length) statusParts.push(`0/${imgs.length} images captured`);
-    statusParts.push(`${files.length} file${files.length!==1?"s":""}`);
-    if (refinedText) statusParts.push("LLM refined ✦");
-    let statusMsg = statusParts.join(" · ");
-    const warns = [];
-    if (refineError) warns.push(`⚠ LLM refine failed: ${refineError} (saved raw text)`);
-    if (failedImgs.length) warns.push(`⚠ ${failedImgs.length} image(s) couldn't be fetched (may be expired)`);
-    if (chipsOnly) warns.push(`⚠ ${chipsOnly} file(s) found by name only (no binary available in DOM)`);
-    if (warns.length) statusMsg += "<br>" + warns.join("<br>");
-
-    showStatus("cep-extractStatus", warns.length ? "warn" : "ok", statusMsg);
-    el('cep-extractResults').style.display = "block";
-  }
-
-  function showStatus(id, type, msg) {
-    const statusEl = el(id);
-    statusEl.className = "cep-status " + type;
-    statusEl.innerHTML = msg;
-    statusEl.style.display = "block";
-  }
-
-  // Section 1: Result action buttons
-  el('cep-btnCopy').onclick = async () => {
-    if (!extractedData) return;
-    await navigator.clipboard.writeText(buildPlainText(extractedData));
-    flash(el('cep-btnCopy'), "✓ Copied");
-  };
-
-  el('cep-btnTxt').onclick = () => {
-    if (!extractedData) return;
-    chrome.runtime.sendMessage({ action: "downloadText", text: buildPlainText(extractedData), filename: `chat_${Date.now()}.txt` });
-  };
-
-  el('cep-btnJson').onclick = () => {
-    if (!extractedData) return;
-    chrome.runtime.sendMessage({ action: "downloadJson", json: JSON.stringify(extractedData, null, 2), filename: `chat_${Date.now()}.json` });
-  };
-
-  el('cep-btnImgs').onclick = async () => {
-    if (!extractedData) return;
-    const imgs = (extractedData.allImages || []).filter(i => i.dataUrl);
-    for (let i = 0; i < imgs.length; i++) {
-      await delay(250 * i);
-      const ext = imgs[i].mimeType?.split("/")[1] || "jpg";
-      chrome.runtime.sendMessage({ action: "downloadDataUrl", dataUrl: imgs[i].dataUrl, filename: `img_${i + 1}.${ext}` });
-    }
-    flash(el('cep-btnImgs'), `⬇ Saving ${imgs.length}…`);
-  };
-
-  function flash(buttonEl, msg) {
-    const orig = buttonEl.innerHTML;
-    buttonEl.innerHTML = msg;
-    setTimeout(() => buttonEl.innerHTML = orig, 1800);
-  }
-
-  // Section 3: Teleport Platforms
+  // Section 3: Direct redirect buttons
   tray.querySelectorAll('.cep-tport-btn').forEach(btn => {
-    btn.onclick = async () => {
+    btn.onclick = () => {
       const target = btn.dataset.target;
-      const cap = await runExtractionFlow(false);
-      if (!cap) return;
-
-      const transfer = {
-        targetPlatform: target,
-        capsule: cap,
-        timestamp: Date.now()
-      };
-      await chrome.storage.local.set({ pending_transfer: transfer });
-
       const urls = {
         claude: "https://claude.ai/new",
         chatgpt: "https://chatgpt.com/",

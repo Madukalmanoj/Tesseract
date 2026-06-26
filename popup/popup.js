@@ -31,7 +31,7 @@ async function init() {
     document.querySelectorAll(".tport-btn").forEach(b => b.disabled = true);
   }
 
-  const stored = await chrome.storage.local.get(["apiKeys","lastProvider","llmEnabled","open_tab"]);
+  const stored = await chrome.storage.local.get(["apiKeys","lastProvider","llmEnabled","open_tab","autoExtract"]);
   if (stored.lastProvider) setProvider(stored.lastProvider);
   $("apiKeyInput").value = stored.apiKeys?.[currentProvider] || "";
 
@@ -59,6 +59,11 @@ async function init() {
     openSettings();
   } else {
     renderCapsuleList();
+  }
+
+  if (stored.autoExtract) {
+    await chrome.storage.local.remove(["autoExtract"]);
+    runExtractionFlow(true);
   }
 }
 
