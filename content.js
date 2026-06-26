@@ -2806,7 +2806,7 @@ function initLauncher() {
     };
   }
 
-  // ── Insert as the first inline element in the toolbar row ──
+  // ── Insert as the last inline element in the toolbar row ──
   const toolbar = findToolbarRow();
   if (toolbar) {
     // Clean up: remove any previous paddingRight hack
@@ -2833,14 +2833,13 @@ function initLauncher() {
       }
     }
 
-    // Prepend the launcher to place it on the left side of the toolbar (near attachment/plus buttons)
-    if (launcher.parentNode !== target || launcher !== target.firstElementChild) {
+    // Only re-append if launcher is not already the last child of this target
+    if (launcher.parentNode !== target || launcher !== target.lastElementChild) {
       if (launcher.parentNode) launcher.remove();
-      target.insertBefore(launcher, target.firstElementChild);
+      target.appendChild(launcher);
     }
     // Reset position to inline-flex (not absolute)
     launcher.style.position = '';
-    launcher.style.left = '';
     launcher.style.right = '';
     launcher.style.bottom = '';
     return;
@@ -2862,13 +2861,11 @@ function initLauncher() {
   const compStyle = window.getComputedStyle(composer);
   if (compStyle.position === 'static') composer.style.position = 'relative';
 
-  // Position at the bottom-left to avoid overlapping send/voice buttons on the right
-  const offsets = { chatgpt:['48px','10px'], claude:['52px','14px'], gemini:['48px','12px'], grok:['48px','12px'] };
-  const [defaultL, defaultB] = offsets[PLAT] || ['48px','12px'];
+  const offsets = { chatgpt:['8px','10px'], claude:['8px','14px'], gemini:['8px','12px'], grok:['8px','12px'] };
+  const [defaultR, defaultB] = offsets[PLAT] || ['8px','12px'];
 
   launcher.style.position = 'absolute';
-  launcher.style.left = defaultL;
-  launcher.style.right = '';
+  launcher.style.right = defaultR;
   launcher.style.bottom = defaultB;
 
   if (launcher.parentNode !== composer) {
@@ -3166,6 +3163,29 @@ async function showTray() {
         </button>
       </div>
     </div>
+
+    <!-- ── SECTION 4: KEYBOARD SHORTCUTS ── -->
+    <div class="cep-section" style="border-bottom:none;background:rgba(255,255,255,0.01);">
+      <div class="cep-section-title" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+        <svg class="cep-icon-svg" style="width:11px;height:11px;color:var(--cep-t3)" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"/><line x1="6" y1="8" x2="6" y2="8"/><line x1="10" y1="8" x2="10" y2="8"/><line x1="14" y1="8" x2="14" y2="8"/><line x1="18" y1="8" x2="18" y2="8"/><line x1="6" y1="12" x2="6" y2="12"/><line x1="10" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="14" y2="12"/><line x1="18" y1="12" x2="18" y2="12"/><line x1="7" y1="16" x2="17" y2="16"/></svg>
+        Keyboard Shortcuts
+      </div>
+      <div style="display:flex;flex-direction:column;gap:5px;font-size:10.5px;color:var(--cep-t2);">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span>Extract Tesseract:</span>
+          <kbd style="background:var(--cep-s2);border:1px solid var(--cep-b);border-radius:4px;padding:1px 5px;font-family:monospace;font-size:10px;color:var(--cep-t);">Alt+Shift+E</kbd>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;">
+          <span>Drop Last Pinned:</span>
+          <kbd style="background:var(--cep-s2);border:1px solid var(--cep-b);border-radius:4px;padding:1px 5px;font-family:monospace;font-size:10px;color:var(--cep-t);">Alt+Shift+D</kbd>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;">
+          <span>Copy Chat Text:</span>
+          <kbd style="background:var(--cep-s2);border:1px solid var(--cep-b);border-radius:4px;padding:1px 5px;font-family:monospace;font-size:10px;color:var(--cep-t);">Alt+Shift+X</kbd>
+        </div>
+      </div>
+    </div>
+
     </div><!-- /cep-tray-body -->
   `;
 
