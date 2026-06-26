@@ -21,6 +21,22 @@ function updateProgressBar(show, status = "", percent = 0) {
   if (barEl) barEl.style.width = percent + "%";
 }
 
+async function syncApiKeyUI() {
+  const stored = await chrome.storage.local.get(["apiKeys"]);
+  const key = stored.apiKeys?.[currentProvider] || "";
+  const inp = $("apiKeyInput");
+  const clearBtn = $("clearKeyBtn");
+  
+  inp.value = "";
+  if (key) {
+    inp.placeholder = "•••••••••••••••• (type to replace)";
+    clearBtn.style.visibility = "visible";
+  } else {
+    inp.placeholder = "Paste API key…";
+    clearBtn.style.visibility = "hidden";
+  }
+}
+
 function openSettings() {
   document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
   document.querySelectorAll(".panel").forEach(x => x.classList.remove("active"));
@@ -49,7 +65,7 @@ async function init() {
 
   const stored = await chrome.storage.local.get(["apiKeys","lastProvider","llmEnabled","open_tab","autoExtract"]);
   if (stored.lastProvider) setProvider(stored.lastProvider);
-  $("apiKeyInput").value = stored.apiKeys?.[currentProvider] || "";
+  await syncApiKeyUI();
 
   // Restore LLM enabled state
   if (stored.llmEnabled) {
@@ -138,11 +154,9 @@ function updateProviderBadge() {
 
 // ── Provider tabs ─────────────────────────────────────────────────────────────
 document.querySelectorAll(".pvt").forEach(btn => {
-  btn.addEventListener("click", () => {
+  btn.addEventListener("click", async () => {
     setProvider(btn.dataset.prov);
-    chrome.storage.local.get(["apiKeys"], r => {
-      $("apiKeyInput").value = r.apiKeys?.[currentProvider] || "";
-    });
+    await syncApiKeyUI();
   });
 });
 
@@ -158,15 +172,18 @@ function setProvider(prov) {
   }
 }
 
-$("toggleKey").addEventListener("click", () => {
-  const inp = $("apiKeyInput");
-  const show = inp.type === "password";
-  inp.type = show ? "text" : "password";
-  $("toggleKey").textContent = show ? "hide" : "show";
+$("clearKeyBtn").addEventListener("click", async () => {
+  const r = await chrome.storage.local.get(["apiKeys"]);
+  const keys = r.apiKeys || {};
+  delete keys[currentProvider];
+  await chrome.storage.local.set({ apiKeys: keys });
+  await syncApiKeyUI();
 });
 
 $("btnTestKey").addEventListener("click", async () => {
-  const key = $("apiKeyInput").value.trim();
+  const inputKey = $("apiKeyInput").value.trim();
+  const stored = await chrome.storage.local.get(["apiKeys"]);
+  const key = inputKey || stored.apiKeys?.[currentProvider] || "";
   const statusEl = $("testKeyStatus");
   if (!key) {
     statusEl.textContent = "Enter a key first.";
@@ -203,17 +220,24 @@ $("btnTestKey").addEventListener("click", async () => {
 
 $("apiKeyInput").addEventListener("input", async () => {
   const key = $("apiKeyInput").value.trim();
-  const r = await chrome.storage.local.get(["apiKeys"]);
-  const keys = r.apiKeys || {};
-  keys[currentProvider] = key;
-  await chrome.storage.local.set({ apiKeys: keys });
+  const clearBtn = $("clearKeyBtn");
   
   if (key) {
+    clearBtn.style.visibility = "visible";
+    const r = await chrome.storage.local.get(["apiKeys"]);
+    const keys = r.apiKeys || {};
+    keys[currentProvider] = key;
+    await chrome.storage.local.set({ apiKeys: keys });
+    
     const statusEl = $("extractStatus");
     if (statusEl && (statusEl.innerHTML.includes("configure your") || statusEl.innerHTML.includes("API key"))) {
       statusEl.style.display = "none";
       statusEl.innerHTML = "";
     }
+  } else {
+    const stored = await chrome.storage.local.get(["apiKeys"]);
+    const storedKey = stored.apiKeys?.[currentProvider] || "";
+    clearBtn.style.visibility = storedKey ? "visible" : "hidden";
   }
 });
 
@@ -228,7 +252,9 @@ async function runExtractionFlow(shouldSave = false) {
   $("fileItems").innerHTML = "";
 
   const useLLM = $("llmEnabled").checked;
-  const apiKey = $("apiKeyInput").value.trim();
+  const inputKey = $("apiKeyInput").value.trim();
+  const stored = await chrome.storage.local.get(["apiKeys"]);
+  const apiKey = inputKey || stored.apiKeys?.[currentProvider] || "";
 
   if (useLLM && !apiKey) {
     showStatus("extractStatus","err","LLM is enabled — paste an API key first.");
