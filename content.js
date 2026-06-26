@@ -2806,35 +2806,7 @@ function initLauncher() {
     };
   }
 
-  // ChatGPT specific override to prevent overlapping with absolutely positioned send/voice buttons
-  if (PLAT === 'chatgpt') {
-    let composer = input.parentElement;
-    while (composer && composer !== document.body) {
-      if (composer.querySelector('button') && composer.offsetHeight > 50) {
-        break;
-      }
-      composer = composer.parentElement;
-    }
-    if (!composer || composer === document.body) {
-      composer = input.parentElement;
-    }
-    if (composer) {
-      const compStyle = window.getComputedStyle(composer);
-      if (compStyle.position === 'static') composer.style.position = 'relative';
-
-      launcher.style.position = 'absolute';
-      launcher.style.right = '86px';
-      launcher.style.bottom = '10px';
-
-      if (launcher.parentNode !== composer) {
-        if (launcher.parentNode) launcher.remove();
-        composer.appendChild(launcher);
-      }
-    }
-    return;
-  }
-
-  // ── Insert as the last inline element in the toolbar row ──
+  // ── Insert as the first inline element in the toolbar row ──
   const toolbar = findToolbarRow();
   if (toolbar) {
     // Clean up: remove any previous paddingRight hack
@@ -2861,13 +2833,14 @@ function initLauncher() {
       }
     }
 
-    // Only re-append if launcher is not already the last child of this target
-    if (launcher.parentNode !== target || launcher !== target.lastElementChild) {
+    // Prepend the launcher to place it on the left side of the toolbar (near attachment/plus buttons)
+    if (launcher.parentNode !== target || launcher !== target.firstElementChild) {
       if (launcher.parentNode) launcher.remove();
-      target.appendChild(launcher);
+      target.insertBefore(launcher, target.firstElementChild);
     }
     // Reset position to inline-flex (not absolute)
     launcher.style.position = '';
+    launcher.style.left = '';
     launcher.style.right = '';
     launcher.style.bottom = '';
     return;
@@ -2889,11 +2862,13 @@ function initLauncher() {
   const compStyle = window.getComputedStyle(composer);
   if (compStyle.position === 'static') composer.style.position = 'relative';
 
-  const offsets = { chatgpt:['8px','10px'], claude:['8px','14px'], gemini:['8px','12px'], grok:['8px','12px'] };
-  const [defaultR, defaultB] = offsets[PLAT] || ['8px','12px'];
+  // Position at the bottom-left to avoid overlapping send/voice buttons on the right
+  const offsets = { chatgpt:['48px','10px'], claude:['52px','14px'], gemini:['48px','12px'], grok:['48px','12px'] };
+  const [defaultL, defaultB] = offsets[PLAT] || ['48px','12px'];
 
   launcher.style.position = 'absolute';
-  launcher.style.right = defaultR;
+  launcher.style.left = defaultL;
+  launcher.style.right = '';
   launcher.style.bottom = defaultB;
 
   if (launcher.parentNode !== composer) {
