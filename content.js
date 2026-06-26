@@ -2874,12 +2874,17 @@ async function showTray() {
 
   const el = id => tray.querySelector('#' + id);
 
-  // Close button
-  el('cep-tc').onclick = () => {
-    tray.remove();
-    tray = null;
+  // Close helper
+  const closeTray = () => {
+    if (tray) {
+      tray.remove();
+      tray = null;
+    }
     document.getElementById('cep-launcher')?.classList.remove('cep-open');
   };
+
+  // Close button
+  el('cep-tc').onclick = closeTray;
 
   // Restore LLM enabled state
   const stored = await chrome.storage.local.get(["llmEnabled"]);
@@ -2897,6 +2902,7 @@ async function showTray() {
   el('cep-btnExtract').onclick = async () => {
     const on = el('cep-llmEnabled').checked;
     await chrome.storage.local.set({ llmEnabled: on, autoExtract: true });
+    closeTray();
     
     chrome.runtime.sendMessage({ action: "openExtensionPopup" }).then(res => {
       if (!res || !res.success) {
@@ -2908,6 +2914,7 @@ async function showTray() {
   // Section 2: Open capsules UI
   el('cep-btnOpenPopup').onclick = async () => {
     await chrome.storage.local.set({ open_tab: "capsules" });
+    closeTray();
     chrome.runtime.sendMessage({ action: "openExtensionPopup" }).then(res => {
       if (!res || !res.success) {
         chrome.runtime.sendMessage({ action: "openPopupTab" });
