@@ -10,12 +10,25 @@ const PLAT = location.hostname.includes('claude.ai') ? 'claude'
 
 const TYPE_BADGES = new Set(['ZIP', 'PDF', 'DOCX', 'TXT', 'CSV', 'XLSX', 'PPTX', 'PNG', 'JPG', 'JPEG', 'GIF', 'WEBP', 'HTML', 'CSS', 'JS', 'PY', 'SH', 'JSON', 'MD', 'PASTED']);
 
+function isContextInvalidated() {
+  try {
+    return !chrome.runtime || !chrome.runtime.id;
+  } catch (e) {
+    return true;
+  }
+}
+
 // ── Background proxy (no CORS) ───────────────────────────────────────────────
 function bg(action, data) {
+  if (isContextInvalidated()) return Promise.resolve({error: 'Extension context invalidated'});
   return new Promise(ok => {
-    chrome.runtime.sendMessage({action,...data}, r => {
-      ok(chrome.runtime.lastError ? {error:chrome.runtime.lastError.message} : (r||{error:'no response'}));
-    });
+    try {
+      chrome.runtime.sendMessage({action,...data}, r => {
+        ok(chrome.runtime.lastError ? {error:chrome.runtime.lastError.message} : (r||{error:'no response'}));
+      });
+    } catch(e) {
+      ok({error: e.message || 'Extension context invalidated'});
+    }
   });
 }
 
@@ -303,9 +316,18 @@ function extractText(turn) {
     '[class*="toolbar" i], [class*="Toolbar"], ' +
     '[class*="action"], [class*="copy"], [class*="feedback"], ' +
     '[class*="tooltip"], [class*="thumb"], [aria-hidden="true"], ' +
-    '[class*="sr-only" i], [class*="visually-hidden" i], [class*="assistive-text" i]'
+    '[class*="sr-only" i], [class*="visually-hidden" i], [class*="assistive-text" i], ' +
+    '#cep-launcher, #cep-tray, .cep-toast, [id^="cep-"], [class^="cep-"]'
   )) {
     el.remove();
+  }
+
+  // Remove standalone sender headers/indicators
+  for (const el of clone.querySelectorAll('h1, h2, h3, h4, h5, h6, div, span, p')) {
+    const t = el.innerText?.trim() || '';
+    if (/^(You said|Gemini said|ChatGPT said|Claude said|Grok said|Claude responded|You:|ChatGPT:|Claude:|Gemini:|Grok:)$/i.test(t)) {
+      el.remove();
+    }
   }
   
   const text = clone.innerText?.trim() || '';
@@ -363,7 +385,8 @@ function querySelectorShadow(selector, root = document) {
 
 // Check if an element or its ancestor is part of the UI container or noise
 function isInsideUI(el) {
-  if (!el) return false;
+  if (!el || typeof el.closest !== 'function') return false;
+  if (el.closest('#cep-launcher, #cep-tray, .cep-toast, [id^="cep-"], [class^="cep-"]')) return true;
   return !!el.closest(
     'nav, aside, header, footer, form, ' +
     '[role="navigation"], [role="menu"], [role="toolbar"], [role="dialog"], ' +
@@ -625,6 +648,11 @@ async function extractImages(turn, idMap = {}) {
                      isGeminiUpload;
     if (!isUpload&&sl.includes('avatar')) { console.log('[CEP] Skipped: non-upload avatar keyword'); continue; }
 
+    if (src.startsWith('chrome-extension://') || src.startsWith('chrome://') || src.startsWith('about:')) {
+      console.log('[CEP] Skipped local browser/extension resource URL:', src);
+      continue;
+    }
+
     // Fetch same-origin blob/data URLs directly in content script context
     let r;
     if (src.startsWith('blob:') || src.startsWith('data:')) {
@@ -660,7 +688,7 @@ async function extractImages(turn, idMap = {}) {
 }
 
 // ── Extract files from a turn ────────────────────────────────────────────────
-async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
+async function extractFiles(turn, store, orgId, consumedStore = new Set(), authHeader = null, idMap = null) {
   const files = [];
   const seen  = new Set();
 
@@ -696,7 +724,7 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
   if (PLAT === 'chatgpt') {
     // Find all chips in this turn
     const turnChips = [];
-    for (const chip of turn.querySelectorAll('[class*="FileCard"],[class*="AttachmentTile"],[class*="file-tile"],[data-message-file-name]')) {
+    for (const chip of turn.querySelectorAll('[class*="FileCard"],[class*="AttachmentTile"],[class*="file-tile"],[data-message-file-name],[data-testid="file-card"],[class*="file-card"],[class*="AttachmentCard"],[class*="FileChip"],[class*="attachment"],[class*="file-preview"]')) {
       if (isInsideUI(chip)) continue;
       const name = chip.dataset?.messageFileName || chipText(chip);
       if (!name) continue;
@@ -714,17 +742,73 @@ async function extractFiles(turn, store, orgId, consumedStore = new Set()) {
 
     const unmatchedChips = [];
     for (const item of turnChips) {
+      const fd = { name: item.name, source: 'chatgpt-chip', note: 'name only' };
       const stored = fromStore(item.name, store, consumedStore);
       if (stored) {
         consumedStore.add(stored);
-        add({
-          name: stored.filename || item.name,
-          dataUrl: stored.dataUrl,
-          mimeType: stored.mimeType,
-          source: 'chip-matched',
-          note: '✓ data'
-        });
+        fd.name = stored.filename || fd.name;
+        fd.dataUrl = stored.dataUrl;
+        fd.mimeType = stored.mimeType;
+        fd.note = '✓ intercepted';
+        add(fd);
       } else {
+        // Fallback: Try downloading via background script using fileId
+        let fileId = null;
+        // 1. Check DOM attributes/HTML of the chip
+        for (const attr of item.chip.attributes) {
+          if (attr.name.startsWith('data-') && (attr.value.startsWith('file-') || attr.value.startsWith('file_') || attr.value.startsWith('libfile_'))) {
+            fileId = attr.value;
+            break;
+          }
+        }
+        if (!fileId) {
+          const m = item.chip.innerHTML.match(/(file-[a-zA-Z0-9_-]{10,50})/);
+          if (m) fileId = m[1];
+        }
+        if (!fileId) {
+          const m2 = item.chip.innerHTML.match(/(file_[a-zA-Z0-9_-]{10,50})/);
+          if (m2) fileId = m2[1];
+        }
+        if (!fileId) {
+          const m3 = item.chip.innerHTML.match(/(libfile_[a-zA-Z0-9_-]{10,50})/);
+          if (m3) fileId = m3[1];
+        }
+        
+        // 2. Check idMap from page store lookup
+        if (!fileId && idMap) {
+          for (const [fid, fname] of Object.entries(idMap)) {
+            if (fname.toLowerCase() === item.name.toLowerCase()) {
+              fileId = fid;
+              break;
+            }
+          }
+        }
+
+        const match = window.location.pathname.match(/\/c\/([a-f0-9-]{36})/);
+        const convId = match ? match[1] : null;
+
+        if (fileId && authHeader) {
+          console.log("[CEP] Falling back to background fetch for ChatGPT file:", item.name, "ID:", fileId);
+          try {
+            const r = await bg('fetchChatGPTFile', { fileId, authHeader, conversationId: convId });
+            if (r && !r.error && r.dataUrl) {
+              fd.name = r.filename || fd.name;
+              fd.dataUrl = r.dataUrl;
+              fd.mimeType = r.mimeType;
+              fd.note = '✓ chatgpt-api';
+              // If we matched the API response, let's see if there is a store file with this dataurl to consume it
+              for (const [sk, sv] of Object.entries(store || {})) {
+                if (sv.dataUrl === r.dataUrl) consumedStore.add(sv);
+              }
+              add(fd);
+              continue;
+            } else {
+              console.warn("[CEP] Background fetch failed for:", item.name, r?.error || "no dataUrl");
+            }
+          } catch (err) {
+            console.warn("[CEP] Background fetch error for:", item.name, err);
+          }
+        }
         unmatchedChips.push(item);
       }
     }
@@ -1259,7 +1343,7 @@ async function extractAll() {
     if (textKey) seenTexts.add(textKey);
 
     const images= await extractImages(turn, idMap);
-    const files = await extractFiles(turn, store, orgId, consumedStore);
+    const files = await extractFiles(turn, store, orgId, consumedStore, authHeader, idMap);
 
     // Deduplicate images across turns
     // ChatGPT: use full URL (different query params = different images)
@@ -1658,7 +1742,7 @@ async function dropCapsule(cap) {
     } catch(e) { console.warn('[CEP] Bad file dataUrl:', e); }
   }
 
-  if (!allFiles.length) { toast(`💊 "${cap.name}" dropped!`); return; }
+  if (!allFiles.length) { toast(`Capsule "${cap.name}" dropped!`); return; }
 
   // ── 3. Inject files ───────────────────────────────────────────────────────
   let injected = false;
@@ -1761,7 +1845,7 @@ async function dropCapsule(cap) {
     }
   }
 
-  toast(`💊 "${cap.name}" — text + ${allFiles.length} file(s)!`);
+  toast(`Capsule "${cap.name}" — text + ${allFiles.length} file(s) dropped!`);
 }
 
 // ── Capsule tray ──────────────────────────────────────────────────────────────
@@ -1779,35 +1863,34 @@ function injectStyles() {
       justify-content: center;
       width: 32px;
       height: 32px;
-      border-radius: 50%;
-      background: rgba(124, 106, 247, 0.15);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      border: 1.5px solid rgba(124, 106, 247, 0.45);
+      border-radius: 8px;
+      background: transparent;
+      border: none;
       cursor: pointer;
       z-index: 99999;
-      transition: all 0.2s ease;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.25), inset 0 0 6px rgba(124,106,247,0.1);
+      transition: all 0.18s ease;
       color: #a99cf9;
-      font-size: 15px;
-      font-weight: bold;
       user-select: none;
       flex-shrink: 0;
       align-self: center;
+      margin: 0 2px;
+      padding: 0;
+      line-height: 1;
+    }
+    #cep-launcher svg {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
     }
     #cep-launcher:hover {
-      background: rgba(124, 106, 247, 0.32);
-      border-color: #7c6af7;
-      color: #fff;
-      box-shadow: 0 4px 14px rgba(124,106,247,0.4);
-      transform: scale(1.1);
+      background: rgba(124, 106, 247, 0.15);
+      color: #c4b8ff;
+      transform: scale(1.08);
     }
     #cep-launcher:active { transform: scale(0.93); }
     #cep-launcher.cep-open {
-      background: rgba(124, 106, 247, 0.35);
-      border-color: #7c6af7;
+      background: rgba(124, 106, 247, 0.22);
       color: #fff;
-      box-shadow: 0 0 0 3px rgba(124,106,247,0.2);
     }
     #cep-tray {
       --cep-bg:#0f0f10;
@@ -2194,6 +2277,32 @@ function injectStyles() {
       background: rgba(255, 255, 255, 0.06);
     }
 
+    .cep-icon-svg {
+      width: 14px;
+      height: 14px;
+      stroke: currentColor;
+      stroke-width: 2px;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      vertical-align: middle;
+      flex-shrink: 0;
+      display: inline-block;
+    }
+    .cep-brand-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+    .cep-brand-dot.claude { background-color: #f0a070; }
+    .cep-brand-dot.chatgpt { background-color: var(--cep-green); }
+    .cep-brand-dot.gemini { background-color: #3f8ef6; }
+    .cep-brand-dot.grok { background-color: var(--cep-t); }
+    .cep-brand-dot.groq { background-color: var(--cep-amber); }
+    .cep-brand-dot.anthropic { background-color: #f0a070; }
+
     .cep-stats {
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
@@ -2539,6 +2648,10 @@ function injectStyles() {
 }
 
 async function toggleTray() {
+  if (isContextInvalidated()) {
+    toast("Extension updated. Please reload the page to activate.", true);
+    return;
+  }
   if (tray) {
     tray.remove();
     tray = null;
@@ -2549,6 +2662,9 @@ async function toggleTray() {
       document.getElementById('cep-launcher')?.classList.add('cep-open');
     } catch (e) {
       console.error("[CEP] Error opening tray:", e);
+      if (e.toString().includes("Extension context invalidated") || e.message?.includes("Extension context invalidated")) {
+        toast("Extension updated. Please reload the page to activate.", true);
+      }
     }
   }
 }
@@ -2645,39 +2761,100 @@ function findToolbarRow() {
 
 function initLauncher() {
   if (PLAT === 'unknown') return;
-  if (document.getElementById('cep-launcher')) return;
 
   injectStyles();
 
-  const launcher = document.createElement('div');
-  launcher.id = 'cep-launcher';
-  launcher.title = 'OmniExtract';
-  launcher.innerHTML = '⬡';
-  launcher.onclick = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    toggleTray();
-  };
-
-  // Strategy 1: Append to the toolbar row (beside voice/mic/send buttons)
-  const toolbar = findToolbarRow();
-  if (toolbar) {
-    toolbar.appendChild(launcher);
-    return;
-  }
-
-  // Strategy 2: Absolute-position fallback in the input wrapper
   const inputSel = (SEL[PLAT]||SEL.claude).input;
   const input = document.querySelector(inputSel);
   if (!input) return;
-  const wrapper = input.parentElement;
-  if (!wrapper) return;
-  const compStyle = window.getComputedStyle(wrapper);
-  if (compStyle.position === 'static') wrapper.style.position = 'relative';
-  const offsets = { chatgpt:['52px','10px'], claude:['54px','14px'], gemini:['60px','12px'], grok:['52px','12px'] };
-  const [r, b] = offsets[PLAT] || ['52px','12px'];
-  launcher.style.cssText = `position:absolute;right:${r};bottom:${b};`;
-  wrapper.appendChild(launcher);
+
+  // Retrieve or create the launcher element
+  let launcher = document.getElementById('cep-launcher');
+  const isNew = !launcher;
+  if (isNew) {
+    launcher = document.createElement('div');
+    launcher.id = 'cep-launcher';
+    launcher.title = 'OmniExtract';
+    // Professional SVG icon — capsule/extract symbol
+    launcher.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 2L3 7V17L12 22L21 17V7L12 2Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+      <path d="M12 22V12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M21 7L12 12L3 7" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+      <circle cx="12" cy="12" r="2" fill="currentColor" opacity="0.6"/>
+    </svg>`;
+    launcher.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleTray();
+    };
+  }
+
+  // ── Insert as the last inline element in the toolbar row ──
+  const toolbar = findToolbarRow();
+  if (toolbar) {
+    // Clean up: remove any previous paddingRight hack
+    if (toolbar.style.paddingRight === '48px') {
+      toolbar.style.paddingRight = '';
+    }
+
+    // For Gemini, the detected toolbar is often the tight button group (mic/send).
+    // Walk up to find a wider parent container so we don't squeeze into that group.
+    let target = toolbar;
+    if (PLAT === 'gemini') {
+      let cur = toolbar.parentElement;
+      while (cur && cur !== document.body) {
+        if (cur.nodeType === 1) {
+          const st = window.getComputedStyle(cur);
+          // Find a wider flex row that also contains the input — that's the full toolbar bar
+          if ((st.display === 'flex' || st.display === 'inline-flex') &&
+              cur.offsetWidth > toolbar.offsetWidth + 50) {
+            target = cur;
+            break;
+          }
+        }
+        cur = cur.parentElement;
+      }
+    }
+
+    // Only re-append if launcher is not already the last child of this target
+    if (launcher.parentNode !== target || launcher !== target.lastElementChild) {
+      if (launcher.parentNode) launcher.remove();
+      target.appendChild(launcher);
+    }
+    // Reset position to inline-flex (not absolute)
+    launcher.style.position = '';
+    launcher.style.right = '';
+    launcher.style.bottom = '';
+    return;
+  }
+
+  // ── Fallback: absolute positioning if no toolbar row is found ──
+  let composer = input.parentElement;
+  while (composer && composer !== document.body) {
+    if (composer.querySelector('button') && composer.offsetHeight > 50) {
+      break;
+    }
+    composer = composer.parentElement;
+  }
+  if (!composer || composer === document.body) {
+    composer = input.parentElement;
+  }
+  if (!composer) return;
+
+  const compStyle = window.getComputedStyle(composer);
+  if (compStyle.position === 'static') composer.style.position = 'relative';
+
+  const offsets = { chatgpt:['8px','10px'], claude:['8px','14px'], gemini:['8px','12px'], grok:['8px','12px'] };
+  const [defaultR, defaultB] = offsets[PLAT] || ['8px','12px'];
+
+  launcher.style.position = 'absolute';
+  launcher.style.right = defaultR;
+  launcher.style.bottom = defaultB;
+
+  if (launcher.parentNode !== composer) {
+    if (launcher.parentNode) launcher.remove();
+    composer.appendChild(launcher);
+  }
 }
 
 // Clean extracted text before sending to LLM for refinement
@@ -2748,11 +2925,13 @@ function fmtDate(iso) {
 }
 
 async function loadCapsules() {
+  if (isContextInvalidated()) return [];
   const r = await chrome.storage.local.get(["capsules"]);
   return (r.capsules || []).sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
 async function saveCapsule(cap) {
+  if (isContextInvalidated()) return;
   const imgCount = (cap.images||[]).filter(i=>i.dataUrl).length;
   const capSize = JSON.stringify(cap).length;
   console.log(`[CEP] Saving capsule "${cap.name}": ${imgCount} images, ~${(capSize/1024).toFixed(0)}KB`);
@@ -2780,12 +2959,14 @@ async function saveCapsule(cap) {
 }
 
 async function deleteCapsule(id) {
+  if (isContextInvalidated()) return;
   const r = await chrome.storage.local.get(["capsules"]);
   const caps = (r.capsules||[]).filter(c => c.id !== id);
   await chrome.storage.local.set({ capsules: caps });
 }
 
 async function deleteAllCapsules() {
+  if (isContextInvalidated()) return;
   await chrome.storage.local.set({ capsules: [] });
 }
 
@@ -2814,7 +2995,7 @@ async function showTray() {
   tray.innerHTML = `
     <div id="cep-th">
       <div class="cep-logo-info">
-        <div class="cep-logo-symbol">⬡</div>
+        <div class="cep-logo-symbol"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2L3 7V17L12 22L21 17V7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 22V12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M21 7L12 12L3 7" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12" r="2" fill="currentColor" opacity="0.6"/></svg></div>
         <div class="cep-hdr-info">
           <h1>OmniExtract</h1>
           <p>Launcher</p>
@@ -2828,7 +3009,10 @@ async function showTray() {
 
     <!-- ── SECTION 1: EXTRACT & SAVE ── -->
     <div class="cep-section">
-      <div class="cep-section-title">⚡ Extract & Save</div>
+      <div class="cep-section-title" style="display:flex;align-items:center;gap:6px">
+        <svg class="cep-icon-svg" style="width:11px;height:11px" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
+        Extract & Save
+      </div>
       
       <!-- LLM Auto-Refine section (simple toggle switch) -->
       <div class="cep-llm-section" id="cep-llmSection" style="margin-bottom: 12px; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; background: var(--cep-s1); border: 1px solid var(--cep-b); border-radius: var(--cep-r);">
@@ -2841,18 +3025,30 @@ async function showTray() {
         </div>
       </div>
 
-      <button class="cep-btn cep-btn-primary" id="cep-btnExtract">⚡ Extract & Save Capsule</button>
+      <button class="cep-btn cep-btn-primary" id="cep-btnExtract" style="display:flex;align-items:center;justify-content:center;gap:6px">
+        <svg class="cep-icon-svg" style="width:13px;height:13px" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
+        Extract & Save Capsule
+      </button>
     </div>
 
     <!-- ── SECTION 2: DROP CAPSULE ── -->
     <div class="cep-section">
-      <div class="cep-section-title">💊 Drop Capsule</div>
-      <button class="cep-btn cep-btn-secondary" id="cep-btnOpenPopup">💊 Open Capsules Tab</button>
+      <div class="cep-section-title" style="display:flex;align-items:center;gap:6px">
+        <svg class="cep-icon-svg" style="width:11px;height:11px;transform:rotate(-45deg)" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="5" ry="5"></rect><line x1="12" y1="7" x2="12" y2="17"></line></svg>
+        Drop Capsule
+      </div>
+      <button class="cep-btn cep-btn-secondary" id="cep-btnOpenPopup" style="display:flex;align-items:center;justify-content:center;gap:6px">
+        <svg class="cep-icon-svg" style="width:13px;height:13px;transform:rotate(-45deg)" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="5" ry="5"></rect><line x1="12" y1="7" x2="12" y2="17"></line></svg>
+        Open Capsules Tab
+      </button>
     </div>
 
     <!-- ── SECTION 3: DIRECT REDIRECT ── -->
     <div class="cep-section">
-      <div class="cep-section-title">🚀 Go to Platform</div>
+      <div class="cep-section-title" style="display:flex;align-items:center;gap:6px">
+        <svg class="cep-icon-svg" style="width:11px;height:11px" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+        Go to Platform
+      </div>
 
       <!-- Thin CSS Progress Bar -->
       <div id="cep-tport-progress" style="display:none; margin-bottom:12px; background:var(--cep-s1); border:1px solid var(--cep-b); border-radius:var(--cep-r); padding:8px 10px;">
@@ -2867,16 +3063,16 @@ async function showTray() {
 
       <div class="cep-teleport-grid">
         <button class="cep-tport-btn claude" data-target="claude" title="Go to Claude">
-          <span style="font-size:14px">🟠</span> Claude
+          <span class="cep-brand-dot claude"></span> Claude
         </button>
         <button class="cep-tport-btn chatgpt" data-target="chatgpt" title="Go to ChatGPT">
-          <span style="font-size:14px">🟢</span> ChatGPT
+          <span class="cep-brand-dot chatgpt"></span> ChatGPT
         </button>
         <button class="cep-tport-btn gemini" data-target="gemini" title="Go to Gemini">
-          <span style="font-size:14px">✦</span> Gemini
+          <svg class="cep-icon-svg" style="width:12px;height:12px;color:#3f8ef6" viewBox="0 0 24 24"><path d="M12 2L15 9L22 12L15 15L12 22L9 15L2 12L9 9Z"></path></svg> Gemini
         </button>
         <button class="cep-tport-btn grok" data-target="grok" title="Go to Grok">
-          <span style="font-size:14px">⚡</span> Grok
+          <span class="cep-brand-dot grok"></span> Grok
         </button>
       </div>
     </div>
@@ -3057,6 +3253,7 @@ function eh(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,
 
 // Check for pending transfer on load
 async function checkPendingTransfer() {
+  if (isContextInvalidated()) return;
   try {
     const r = await chrome.storage.local.get(["pending_transfer"]);
     if (!r.pending_transfer) return;
@@ -3146,6 +3343,61 @@ setInterval(() => {
   }
   initLauncher();
 }, 1500);
+
 // Also run immediately on load
 initLauncher();
+
+// Event listeners on body for typing/pasting/focus to instantly re-initialize or adjust the launcher
+document.body.addEventListener('input', (e) => {
+  if (e.target && (e.target.id === 'prompt-textarea' || e.target.tagName === 'TEXTAREA' || e.target.getAttribute('contenteditable') === 'true')) {
+    triggerInitLauncher();
+  }
+}, true);
+
+document.body.addEventListener('paste', (e) => {
+  if (e.target && (e.target.id === 'prompt-textarea' || e.target.tagName === 'TEXTAREA' || e.target.getAttribute('contenteditable') === 'true')) {
+    triggerInitLauncher();
+  }
+}, true);
+
+document.body.addEventListener('focus', (e) => {
+  if (e.target && (e.target.id === 'prompt-textarea' || e.target.tagName === 'TEXTAREA' || e.target.getAttribute('contenteditable') === 'true')) {
+    triggerInitLauncher();
+  }
+}, true);
+
+// MutationObserver for SPA changes
+let initTimeout = null;
+function triggerInitLauncher() {
+  if (initTimeout) return;
+  initTimeout = requestAnimationFrame(() => {
+    const existing = document.getElementById('cep-launcher');
+    if (existing && !document.body.contains(existing)) {
+      existing.remove();
+    }
+    initLauncher();
+    initTimeout = null;
+  });
+}
+
+const observer = new MutationObserver((mutations) => {
+  let shouldInit = false;
+  for (const m of mutations) {
+    const hasExternalChanges = Array.from(m.addedNodes).concat(Array.from(m.removedNodes)).some(node => {
+      if (!node.id && !node.classList) return true;
+      const id = node.id || '';
+      const isOurId = id.startsWith('cep-');
+      const isOurClass = Array.from(node.classList || []).some(c => c.startsWith('cep-'));
+      return !isOurId && !isOurClass;
+    });
+    if (hasExternalChanges) {
+      shouldInit = true;
+      break;
+    }
+  }
+  if (shouldInit) {
+    triggerInitLauncher();
+  }
+});
+observer.observe(document.body, { childList: true, subtree: true });
 })();

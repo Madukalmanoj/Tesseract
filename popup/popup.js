@@ -5,6 +5,22 @@ let currentProvider = "groq";
 
 const $ = id => document.getElementById(id);
 
+function updateProgressBar(show, status = "", percent = 0) {
+  const pContainer = $("extract-progress");
+  if (!pContainer) return;
+  if (!show) {
+    pContainer.style.display = "none";
+    return;
+  }
+  pContainer.style.display = "block";
+  const statusEl = $("extract-progress-status");
+  const percentEl = $("extract-progress-percent");
+  const barEl = $("extract-progress-bar");
+  if (statusEl) statusEl.textContent = status;
+  if (percentEl) percentEl.textContent = percent + "%";
+  if (barEl) barEl.style.width = percent + "%";
+}
+
 function openSettings() {
   document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
   document.querySelectorAll(".panel").forEach(x => x.classList.remove("active"));
@@ -220,14 +236,17 @@ async function runExtractionFlow(shouldSave = false) {
   }
 
   showStatus("extractStatus","info",'<span class="spin"></span>Extracting chat…');
+  updateProgressBar(true, "Connecting to tab...", 15);
   $("btnExtract").disabled = true;
   document.querySelectorAll(".tport-btn").forEach(b => b.disabled = true);
 
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    updateProgressBar(true, "Extracting chat details...", 35);
     const res = await chrome.tabs.sendMessage(tab.id, { action: "extract" });
     if (!res?.success) throw new Error(res?.error || "Content script error");
     extractedData = res.data;
+    updateProgressBar(true, "Processing messages & files...", 60);
 
     // Auto-fill capsule name
     if (!$("capNameInput").value) {
@@ -244,13 +263,14 @@ async function runExtractionFlow(shouldSave = false) {
     let refinedText = null;
     if (useLLM && hasAssistant) {
       showStatus("extractStatus","info",`<span class="spin"></span>Extracting… then refining with ${currentProvider}…`);
+      updateProgressBar(true, `Refining with ${currentProvider}...`, 80);
       try {
         const chatText = cleanForLLM(buildPlainText(extractedData));
         const r2 = await chrome.runtime.sendMessage({ action: "llmRefine", provider: currentProvider, apiKey, chatText, capsuleName });
         if (r2.error) throw new Error(r2.error);
         refinedText = r2.text;
       } catch(e) {
-        showStatus("extractStatus","warn","⚠ LLM refine failed: " + e.message + " — saving raw text.");
+        showStatus("extractStatus","warn",`<svg class="icon-svg" style="width:12px;height:12px;color:var(--amber);margin-right:4px;" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> LLM refine failed: ` + e.message + " — saving raw text.");
       }
     }
 
@@ -281,6 +301,7 @@ async function runExtractionFlow(shouldSave = false) {
 
     // Save capsule automatically only if requested
     if (shouldSave) {
+      updateProgressBar(true, "Saving capsule...", 95);
       await saveCapsule(cap);
     }
 
@@ -291,6 +312,7 @@ async function runExtractionFlow(shouldSave = false) {
     showStatus("extractStatus","err","Error: " + e.message);
     return null;
   } finally {
+    updateProgressBar(false);
     $("btnExtract").disabled = false;
     // Re-enable teleport buttons only if we are on a supported platform
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -351,7 +373,16 @@ function renderExtractResults(data, refinedText) {
     $("fileItems").innerHTML = "";
     files.forEach(f => {
       const ext = f.name.split(".").pop()?.toLowerCase() || "";
-      const icon = ext === "pdf" ? "📄" : ext === "zip" ? "🗜" : ["doc","docx"].includes(ext) ? "📝" : ["xls","xlsx"].includes(ext) ? "📊" : "📎";
+      let icon = `<svg class="icon-svg" style="width:12px;height:12px;color:var(--t2)" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>`;
+      if (ext === "pdf") {
+        icon = `<svg class="icon-svg" style="width:12px;height:12px;color:var(--red)" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>`;
+      } else if (ext === "zip") {
+        icon = `<svg class="icon-svg" style="width:12px;height:12px;color:var(--amber)" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="12" y1="12" x2="10" y2="12"></line><line x1="12" y1="15" x2="14" y2="15"></line></svg>`;
+      } else if (["doc","docx"].includes(ext)) {
+        icon = `<svg class="icon-svg" style="width:12px;height:12px;color:var(--acc2)" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>`;
+      } else if (["xls","xlsx"].includes(ext)) {
+        icon = `<svg class="icon-svg" style="width:12px;height:12px;color:var(--green)" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><rect x="8" y="13" width="8" height="4"></rect><line x1="12" y1="13" x2="12" y2="17"></line></svg>`;
+      }
       const hasData = !!f.dataUrl;
       const div = document.createElement("div");
       div.className = "file-item" + (hasData ? " clickable" : "");
@@ -362,7 +393,7 @@ function renderExtractResults(data, refinedText) {
         });
       }
       div.innerHTML = `
-        <span class="file-icon">${icon}</span>
+        <span class="file-icon" style="display:flex;align-items:center">${icon}</span>
         <span class="file-name" title="${esc(f.name)}">${esc(f.name)}</span>
         <span class="file-badge ${hasData ? 'ok' : 'chip'}">${hasData ? "✓ data" : "name only"}</span>
       `;
@@ -386,15 +417,15 @@ function renderExtractResults(data, refinedText) {
 
   // Status
   const chipsOnly = files.filter(f => !f.dataUrl).length;
-  let statusParts = [`✓ Capsule saved! ${msgs.length} messages`];
+  let statusParts = [`<svg class="icon-svg" style="width:12px;height:12px;color:var(--green);margin-right:2px;" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg> Capsule saved! ${msgs.length} messages`];
   if (goodImgs.length) statusParts.push(`${goodImgs.length} image${goodImgs.length>1?"s":""}`);
   else if (imgs.length) statusParts.push(`0/${imgs.length} images captured`);
   statusParts.push(`${files.length} file${files.length!==1?"s":""}`);
-  if (refinedText) statusParts.push("LLM refined ✦");
+  if (refinedText) statusParts.push(`refined <svg class="icon-svg" style="width:10px;height:10px;color:var(--acc);margin-left:2px;" viewBox="0 0 24 24"><path d="M12 2L15 9L22 12L15 15L12 22L9 15L2 12L9 9Z"></path></svg>`);
   let statusMsg = statusParts.join(" · ");
   const warns = [];
-  if (failedImgs.length) warns.push(`⚠ ${failedImgs.length} image(s) couldn't be fetched (may be expired)`);
-  if (chipsOnly) warns.push(`⚠ ${chipsOnly} file(s) found by name only (no binary available in DOM)`);
+  if (failedImgs.length) warns.push(`<svg class="icon-svg" style="width:12px;height:12px;color:var(--amber);margin-right:4px;" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> ${failedImgs.length} image(s) couldn't be fetched (may be expired)`);
+  if (chipsOnly) warns.push(`<svg class="icon-svg" style="width:12px;height:12px;color:var(--amber);margin-right:4px;" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> ${chipsOnly} file(s) found by name only (no binary available in DOM)`);
   if (warns.length) statusMsg += "<br>" + warns.join("<br>");
 
   showStatus("extractStatus", warns.length ? "warn" : "ok", statusMsg);
@@ -428,12 +459,7 @@ $("btnImgs").addEventListener("click", async () => {
 // ── Capsules tab ──────────────────────────────────────────────────────────────
 $("capSearch").addEventListener("input", renderCapsuleList);
 
-$("btnShowTray").addEventListener("click", async () => {
-  const caps = await loadCapsules();
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  await chrome.tabs.sendMessage(tab.id, { action: "showCapsuleTray", capsules: caps });
-  window.close();
-});
+
 
 $("btnClearAll")?.addEventListener("click", async () => {
   const caps = await loadCapsules();
@@ -445,8 +471,17 @@ $("btnClearAll")?.addEventListener("click", async () => {
 
 async function renderCapsuleList() {
   const caps = await loadCapsules();
-  const q = $("capSearch").value.toLowerCase();
-  const filtered = q ? caps.filter(c => c.name.toLowerCase().includes(q) || c.promptText?.toLowerCase().includes(q)) : caps;
+  const q = $("capSearch").value.trim().toLowerCase();
+  const filtered = q ? caps.filter(c => {
+    const haystack = [
+      c.name,
+      c.promptText,
+      c.rawText,
+      c.platform,
+      ...(c.files || []).map(f => f.name || f.filename || '')
+    ].filter(Boolean).join(' ').toLowerCase();
+    return haystack.includes(q);
+  }) : caps;
 
   const list = $("capList");
   list.innerHTML = "";
@@ -469,18 +504,29 @@ async function renderCapsuleList() {
     const card = document.createElement("div");
     card.className = "cap-card";
     card.innerHTML = `
-      <div class="cap-name">💊 ${esc(cap.name)}</div>
-      <div class="cap-meta">
+      <div class="cap-name" style="display:flex;align-items:center;gap:6px">
+        <svg class="icon-svg" style="width:12px;height:12px;transform:rotate(-45deg);color:var(--acc)" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="5" ry="5"></rect><line x1="12" y1="7" x2="12" y2="17"></line></svg>
+        ${esc(cap.name)}
+      </div>
+      <div class="cap-meta" style="display:flex;align-items:center;gap:8px">
         <span>${cap.platform || "chat"}</span>
-        ${cap.llmRefined ? `<span style="color:var(--acc)">✦ refined</span>` : ""}
-        ${imgCount  ? `<span>🖼 ${imgCount}</span>` : ""}
-        ${fileCount ? `<span>📎 ${fileDataCount}/${fileCount} files</span>` : ""}
+        ${cap.llmRefined ? `<span style="color:var(--acc);display:flex;align-items:center;gap:3px"><svg class="icon-svg" style="width:10px;height:10px;color:var(--acc)" viewBox="0 0 24 24"><path d="M12 2L15 9L22 12L15 15L12 22L9 15L2 12L9 9Z"></path></svg>refined</span>` : ""}
+        ${imgCount  ? `<span style="display:flex;align-items:center;gap:3px"><svg class="icon-svg" style="width:11px;height:11px" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg> ${imgCount}</span>` : ""}
+        ${fileCount ? `<span style="display:flex;align-items:center;gap:3px"><svg class="icon-svg" style="width:11px;height:11px" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg> ${fileDataCount}/${fileCount}</span>` : ""}
         <span style="margin-left:auto">${fmtDate(cap.createdAt)}</span>
       </div>
       <div class="cap-actions">
-        <button class="cap-act drop" data-id="${cap.id}">💧 Drop</button>
-        <button class="cap-act" data-copy="${cap.id}">📋 Copy</button>
-        <button class="cap-act del" data-del="${cap.id}">🗑</button>
+        <button class="cap-act drop" data-id="${cap.id}" style="display:flex;align-items:center;justify-content:center;gap:4px">
+          <svg class="icon-svg" style="width:11px;height:11px" viewBox="0 0 24 24"><path d="M12 5v14M19 12l-7 7-7-7"></path></svg>
+          Drop
+        </button>
+        <button class="cap-act" data-copy="${cap.id}" style="display:flex;align-items:center;justify-content:center;gap:4px">
+          <svg class="icon-svg" style="width:11px;height:11px" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          Copy
+        </button>
+        <button class="cap-act del" data-del="${cap.id}" style="display:flex;align-items:center;justify-content:center;gap:4px">
+          <svg class="icon-svg" style="width:11px;height:11px;color:var(--red)" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+        </button>
       </div>
     `;
 

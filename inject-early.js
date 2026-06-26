@@ -3,6 +3,19 @@
   if (window.__cep) return;
   const IS_CLAUDE = window.location.hostname.includes('claude.ai');
 
+  // ── Suppress noisy CSP / ad-tracking console errors from the host page ──
+  const _origError = console.error;
+  const _origWarn = console.warn;
+  const CSP_NOISE = /Content Security Policy|doubleclick\.net|ad\.doubleclick|Refused to connect|violates the.*directive/i;
+  console.error = function(...args) {
+    if (args.some(a => typeof a === 'string' && CSP_NOISE.test(a))) return;
+    return _origError.apply(console, args);
+  };
+  console.warn = function(...args) {
+    if (args.some(a => typeof a === 'string' && CSP_NOISE.test(a))) return;
+    return _origWarn.apply(console, args);
+  };
+
   window.__cep = {
     files: {},      // lcName → {dataUrl,mimeType,filename,url}
     urlMap: {},     // downloadUrl → filename (set from /download JSON)
@@ -504,7 +517,9 @@
       c.includes('officedocument')||c.includes('octet-stream')||
       c.includes('image/png')||c.includes('image/jpeg')||
       c.includes('image/gif')||c.includes('image/webp')||
-      c.includes('text/plain')||c.includes('text/csv');
+      c.includes('text/plain')||c.includes('text/csv')||
+      c.includes('excel')||c.includes('csv')||
+      c.includes('spreadsheet')||c.includes('comma-separated');
     return fileUrl || fileMime;
   }
 
