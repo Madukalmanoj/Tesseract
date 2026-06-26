@@ -296,10 +296,19 @@ async function callAnthropic(apiKey, system, userMsg) {
 }
 
 async function callGroq(apiKey, system, userMsg) {
+  try {
+    return await doCallGroq(apiKey, system, userMsg, "llama-3.3-70b-versatile");
+  } catch (e) {
+    console.warn("[CEP] Groq Llama 3.3 failed, trying Mixtral:", e);
+    return await doCallGroq(apiKey, system, userMsg, "mixtral-8x7b-32768");
+  }
+}
+
+async function doCallGroq(apiKey, system, userMsg, model) {
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": "Bearer " + apiKey },
-    body: JSON.stringify({ model: "llama-3.3-70b-versatile", max_tokens: 4096, messages: [{ role: "system", content: system }, { role: "user", content: userMsg }] })
+    body: JSON.stringify({ model, max_tokens: 4096, messages: [{ role: "system", content: system }, { role: "user", content: userMsg }] })
   });
   if (!res.ok) throw new Error("Groq " + res.status + ": " + await res.text());
   const d = await res.json();
@@ -307,7 +316,16 @@ async function callGroq(apiKey, system, userMsg) {
 }
 
 async function callGemini(apiKey, system, userMsg) {
-  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + apiKey, {
+  try {
+    return await doCallGemini(apiKey, system, userMsg, "gemini-2.5-flash");
+  } catch (e) {
+    console.warn("[CEP] Gemini 2.5 Flash failed, trying 1.5 Flash:", e);
+    return await doCallGemini(apiKey, system, userMsg, "gemini-1.5-flash");
+  }
+}
+
+async function doCallGemini(apiKey, system, userMsg, model) {
+  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -351,22 +369,45 @@ async function handleLLMTest({ provider, apiKey }) {
     });
     if (!res.ok) throw new Error("Anthropic " + res.status + ": " + await res.text());
   } else if (provider === "groq") {
-    res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + apiKey },
-      body: JSON.stringify({ model: "llama-3.3-70b-versatile", max_tokens: 1, messages: [{ role: "user", content: user }] })
-    });
-    if (!res.ok) throw new Error("Groq " + res.status + ": " + await res.text());
+    try {
+      res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + apiKey },
+        body: JSON.stringify({ model: "llama-3.3-70b-versatile", max_tokens: 1, messages: [{ role: "user", content: user }] })
+      });
+      if (!res.ok) throw new Error("Groq 3.3 test failed with status: " + res.status);
+    } catch (e) {
+      console.warn("[CEP] Groq 3.3 test failed, trying Mixtral:", e);
+      res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + apiKey },
+        body: JSON.stringify({ model: "mixtral-8x7b-32768", max_tokens: 1, messages: [{ role: "user", content: user }] })
+      });
+      if (!res.ok) throw new Error("Groq " + res.status + ": " + await res.text());
+    }
   } else if (provider === "gemini") {
-    res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + apiKey, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: user }] }],
-        generationConfig: { maxOutputTokens: 1 }
-      })
-    });
-    if (!res.ok) throw new Error("Gemini " + res.status + ": " + await res.text());
+    try {
+      res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + apiKey, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: user }] }],
+          generationConfig: { maxOutputTokens: 1 }
+        })
+      });
+      if (!res.ok) throw new Error("Gemini 2.5 test failed with status: " + res.status);
+    } catch (e) {
+      console.warn("[CEP] Gemini 2.5 test failed, trying 1.5:", e);
+      res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: user }] }],
+          generationConfig: { maxOutputTokens: 1 }
+        })
+      });
+      if (!res.ok) throw new Error("Gemini " + res.status + ": " + await res.text());
+    }
   } else {
     throw new Error("Unknown provider");
   }
