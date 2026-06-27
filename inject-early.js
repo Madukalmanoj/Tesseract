@@ -607,12 +607,22 @@
     };
   }
 
+  function isBlockedUrl(url) {
+    if (typeof url !== 'string') return false;
+    const l = url.toLowerCase();
+    return l.includes('doubleclick.net') || l.includes('doubleclick') || l.includes('google-analytics.com');
+  }
+
   // Fetch hook
   const _fetch = window.fetch;
   window.fetch = async function(...args) {
     const req = args[0];
     const opts = args[1] || {};
     const url = typeof req==='string'?req:(req instanceof Request?req.url:String(req));
+
+    if (isBlockedUrl(url)) {
+      return Promise.reject(new TypeError('Failed to fetch'));
+    }
 
     if (IS_CLAUDE) {
       // ── CLAUDE FETCH HOOK ──
@@ -887,12 +897,30 @@
   const _xopen = XMLHttpRequest.prototype.open;
   const _xsend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open = function(m,u,...r) {
-    this.__cepUrl = String(u||'');
+    const urlStr = String(u||'');
+    if (isBlockedUrl(urlStr)) {
+      this.__cepBlocked = true;
+      return _xopen.apply(this, [m, 'about:blank', ...r]);
+    }
+    this.__cepUrl = urlStr;
     const om = this.__cepUrl.match(/\/organizations\/([a-f0-9-]{36})\//);
     if (om) window.__cep.orgId = om[1];
     return _xopen.apply(this,[m,u,...r]);
   };
   XMLHttpRequest.prototype.send = function(...args) {
+    if (this.__cepBlocked) {
+      setTimeout(() => {
+        if (typeof this.onerror === 'function') {
+          this.onerror(new ProgressEvent('error'));
+        }
+        if (typeof this.onreadystatechange === 'function') {
+          this.readyState = 4;
+          this.status = 0;
+          this.onreadystatechange();
+        }
+      }, 0);
+      return;
+    }
     const body = args[0];
     let uploadFilePromise = null;
     const url = this.__cepUrl || '';

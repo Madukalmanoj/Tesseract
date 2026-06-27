@@ -26,6 +26,10 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     handleLLMRefine(req).then(sendResponse).catch(e => sendResponse({ error: e.message }));
     return true;
   }
+  if (req.action === "llmRefinePrompt") {
+    handleLLMRefinePrompt(req).then(sendResponse).catch(e => sendResponse({ error: e.message }));
+    return true;
+  }
   if (req.action === "testLLMKey") {
     handleLLMTest(req).then(sendResponse).catch(e => sendResponse({ error: e.message }));
     return true;
@@ -255,6 +259,19 @@ async function fetchChatGPTFile(fileId, authHeader, conversationId) {
 }
 
 // ── LLM API router ────────────────────────────────────────────────────────────
+async function handleLLMRefinePrompt({ provider, apiKey, rawPrompt }) {
+  const system = `You are a master prompt engineer. Your task is to refine, structure, and optimize the user's raw prompt to get the best possible response from an LLM.
+Preserve the user's core intent, key details, instructions, constraints, and language, but improve clarity, formatting, instruction sequencing, and context engineering.
+Make it concise yet extremely clear, using structured formatting (e.g. markdown headers, bullet points) where appropriate.
+Output ONLY the refined prompt. Do not include any introductory or concluding remarks, conversational filler, or explanations. Do not put markdown code fences (like \`\`\`) around the prompt, unless the prompt itself contains code. Just output the raw refined prompt text directly.`;
+
+  const user = rawPrompt;
+  if (provider === "anthropic") return callAnthropic(apiKey, system, user);
+  if (provider === "groq")      return callGroq(apiKey, system, user);
+  if (provider === "gemini")    return callGemini(apiKey, system, user);
+  throw new Error("Unknown provider: " + provider);
+}
+
 async function handleLLMRefine({ provider, apiKey, chatText, tesseractName }) {
   const system = `You are a master prompt engineer. Your task is to transform the provided raw chat transcript into a highly dense, reusable 'Context Tesseract'.
 The goal of this tesseract is to allow a user to drop it into a NEW AI chat session to perfectly resume work.

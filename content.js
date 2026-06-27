@@ -2676,6 +2676,87 @@ function injectStyles() {
       85%  { opacity: 1; }
       100% { opacity: 0; }
     }
+
+    #cep-launcher.cep-glowing {
+      color: #5d9cf5 !important;
+      animation: cepPremiumGlow 1.5s infinite alternate ease-in-out;
+      border: 1px solid rgba(93, 156, 245, 0.4) !important;
+      border-radius: 8px;
+    }
+    @keyframes cepPremiumGlow {
+      0% {
+        box-shadow: 0 0 5px rgba(93, 156, 245, 0.4), inset 0 0 5px rgba(93, 156, 245, 0.2);
+        border-color: rgba(93, 156, 245, 0.6);
+        transform: scale(1.0);
+      }
+      100% {
+        box-shadow: 0 0 15px rgba(93, 156, 245, 0.9), inset 0 0 8px rgba(93, 156, 245, 0.4);
+        border-color: rgba(93, 156, 245, 1);
+        transform: scale(1.05);
+        background: rgba(93, 156, 245, 0.15);
+      }
+    }
+    #cep-launcher.cep-loading svg {
+      animation: cepSpin 1.5s infinite linear !important;
+    }
+    @keyframes cepSpin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    #cep-action-popover {
+      position: fixed;
+      z-index: 1000000;
+      width: 160px;
+      background: rgba(15, 15, 16, 0.95);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5), 0 0 15px rgba(124, 106, 247, 0.1);
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      animation: cepPopoverFadeIn 0.15s ease-out;
+      pointer-events: auto;
+    }
+    @keyframes cepPopoverFadeIn {
+      from { opacity: 0; transform: translateY(5px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .cep-popover-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      color: #f0eff4;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 12.5px;
+      font-weight: 500;
+      cursor: pointer;
+      text-align: left;
+      transition: background 0.15s ease, color 0.15s ease;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .cep-popover-btn:hover {
+      background: rgba(124, 106, 247, 0.15);
+      color: #fff;
+    }
+    .cep-popover-btn.refine-btn {
+      color: #5d9cf5;
+    }
+    .cep-popover-btn.refine-btn:hover {
+      background: rgba(93, 156, 245, 0.15);
+      color: #92bfff;
+    }
+    .cep-popover-btn svg {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+    }
   `;
   document.head.appendChild(st);
 }
@@ -2696,7 +2777,172 @@ async function toggleTray() {
       if (e.toString().includes("Extension context invalidated") || e.message?.includes("Extension context invalidated")) {
         toast("Extension updated. Please reload the page to activate.", true);
       }
+  }
+}
+
+function getInputValue(input) {
+  if (!input) return '';
+  if (input.tagName === 'TEXTAREA') {
+    return input.value || '';
+  } else {
+    const text = input.innerText || input.textContent || '';
+    if (text.trim() === '\n' || text.trim() === '') return '';
+    return text;
+  }
+}
+
+function checkLauncherGlowState() {
+  const launcher = document.getElementById('cep-launcher');
+  if (!launcher) return;
+
+  const inputSel = (SEL[PLAT]||SEL.claude).input;
+  const input = document.querySelector(inputSel);
+  if (!input) {
+    launcher.classList.remove('cep-glowing');
+    return;
+  }
+
+  const val = getInputValue(input).trim();
+  if (val.length > 0) {
+    launcher.classList.add('cep-glowing');
+  } else {
+    launcher.classList.remove('cep-glowing');
+  }
+}
+
+let popoverOutsideListenerAdded = false;
+
+function closeLauncherPopover() {
+  const p = document.getElementById('cep-action-popover');
+  if (p) {
+    p.remove();
+  }
+  document.removeEventListener('click', popoverOutsideClickListener);
+  popoverOutsideListenerAdded = false;
+}
+
+function popoverOutsideClickListener(e) {
+  const p = document.getElementById('cep-action-popover');
+  const launcher = document.getElementById('cep-launcher');
+  if (p && !p.contains(e.target) && (!launcher || !launcher.contains(e.target))) {
+    closeLauncherPopover();
+  }
+}
+
+function showLauncherPopover(launcher, input, rawPrompt) {
+  closeLauncherPopover();
+
+  const rect = launcher.getBoundingClientRect();
+  
+  const p = document.createElement('div');
+  p.id = 'cep-action-popover';
+  
+  p.innerHTML = `
+    <button class="cep-popover-btn refine-btn" id="cep-popover-refine">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2L15 9L22 12L15 15L12 22L9 15L2 12L9 9Z" fill="currentColor" opacity="0.3"/>
+      </svg>
+      <span>✨ Refine Prompt</span>
+    </button>
+    <button class="cep-popover-btn" id="cep-popover-menu">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="3" y1="12" x2="21" y2="12"></line>
+        <line x1="3" y1="6" x2="21" y2="6"></line>
+        <line x1="3" y1="18" x2="21" y2="18"></line>
+      </svg>
+      <span>☰ Open Menu</span>
+    </button>
+  `;
+
+  document.body.appendChild(p);
+
+  const popWidth = 160;
+  const popHeight = 76; 
+  
+  let top = rect.top - popHeight - 8;
+  if (top < 10) {
+    top = rect.bottom + 8;
+  }
+  
+  let left = rect.right - popWidth;
+  if (left < 10) {
+    left = 10;
+  }
+
+  p.style.top = `${top}px`;
+  p.style.left = `${left}px`;
+
+  document.getElementById('cep-popover-refine').onclick = (e) => {
+    e.stopPropagation();
+    closeLauncherPopover();
+    refineInputPrompt(input, rawPrompt);
+  };
+
+  document.getElementById('cep-popover-menu').onclick = (e) => {
+    e.stopPropagation();
+    closeLauncherPopover();
+    toggleTray();
+  };
+
+  setTimeout(() => {
+    if (!popoverOutsideListenerAdded) {
+      document.addEventListener('click', popoverOutsideClickListener);
+      popoverOutsideListenerAdded = true;
     }
+  }, 50);
+}
+
+async function refineInputPrompt(input, rawPrompt) {
+  const launcher = document.getElementById('cep-launcher');
+  if (!launcher || launcher.classList.contains('cep-loading')) return;
+
+  const stored = await chrome.storage.local.get(["apiKeys", "lastProvider"]);
+  const provider = stored.lastProvider || "groq";
+  const apiKey = stored.apiKeys?.[provider] || "";
+
+  if (!apiKey) {
+    toast(`❌ Set an API key in extension settings to refine prompts`, true);
+    return;
+  }
+
+  launcher.classList.add('cep-loading');
+  toast(`✨ Refining prompt with ${provider.toUpperCase()}...`);
+
+  try {
+    const res = await chrome.runtime.sendMessage({
+      action: "llmRefinePrompt",
+      provider,
+      apiKey,
+      rawPrompt
+    });
+
+    if (res && res.error) {
+      throw new Error(res.error);
+    }
+
+    if (res && res.text) {
+      const refinedText = res.text.trim();
+      input.focus();
+      if (input.tagName === 'TEXTAREA') {
+        const ns = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+        ns?.call(input, refinedText);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      } else {
+        input.focus();
+        document.execCommand('selectAll', false);
+        document.execCommand('insertText', false, refinedText);
+        input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: refinedText }));
+      }
+      toast("✨ Prompt refined successfully!");
+    } else {
+      throw new Error("No response text received");
+    }
+  } catch (err) {
+    console.error("[CEP] Prompt refinement failed:", err);
+    toast("❌ Refinement failed: " + err.message, true);
+  } finally {
+    launcher.classList.remove('cep-loading');
+    checkLauncherGlowState();
   }
 }
 
@@ -2816,7 +3062,24 @@ function initLauncher() {
     launcher.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      toggleTray();
+
+      if (launcher.classList.contains('cep-loading')) return;
+
+      const existingPopover = document.getElementById('cep-action-popover');
+      if (existingPopover) {
+        closeLauncherPopover();
+        return;
+      }
+
+      const inputSel = (SEL[PLAT]||SEL.claude).input;
+      const inputEl = document.querySelector(inputSel);
+      const val = inputEl ? getInputValue(inputEl).trim() : '';
+
+      if (val.length > 0) {
+        showLauncherPopover(launcher, inputEl, val);
+      } else {
+        toggleTray();
+      }
     };
   }
 
@@ -2857,38 +3120,40 @@ function initLauncher() {
     launcher.style.left = '';
     launcher.style.right = '';
     launcher.style.bottom = '';
-    return;
-  }
-
-  // ── Fallback: absolute positioning if no toolbar row is found ──
-  let composer = input.parentElement;
-  while (composer && composer !== document.body) {
-    if (composer.querySelector('button') && composer.offsetHeight > 50) {
-      break;
+  } else {
+    // ── Fallback: absolute positioning if no toolbar row is found ──
+    let composer = input.parentElement;
+    while (composer && composer !== document.body) {
+      if (composer.querySelector('button') && composer.offsetHeight > 50) {
+        break;
+      }
+      composer = composer.parentElement;
     }
-    composer = composer.parentElement;
+    if (!composer || composer === document.body) {
+      composer = input.parentElement;
+    }
+    if (composer) {
+      const compStyle = window.getComputedStyle(composer);
+      if (compStyle.position === 'static') composer.style.position = 'relative';
+
+      // Position at the bottom-right
+      const offsets = { chatgpt:['8px','10px'], claude:['8px','14px'], gemini:['8px','12px'], grok:['8px','12px'] };
+      const [defaultR, defaultB] = offsets[PLAT] || ['8px','12px'];
+
+      launcher.style.position = 'absolute';
+      launcher.style.left = '';
+      launcher.style.right = defaultR;
+      launcher.style.bottom = defaultB;
+
+      if (launcher.parentNode !== composer) {
+        if (launcher.parentNode) launcher.remove();
+        composer.appendChild(launcher);
+      }
+    }
   }
-  if (!composer || composer === document.body) {
-    composer = input.parentElement;
-  }
-  if (!composer) return;
 
-  const compStyle = window.getComputedStyle(composer);
-  if (compStyle.position === 'static') composer.style.position = 'relative';
-
-  // Position at the bottom-right
-  const offsets = { chatgpt:['8px','10px'], claude:['8px','14px'], gemini:['8px','12px'], grok:['8px','12px'] };
-  const [defaultR, defaultB] = offsets[PLAT] || ['8px','12px'];
-
-  launcher.style.position = 'absolute';
-  launcher.style.left = '';
-  launcher.style.right = defaultR;
-  launcher.style.bottom = defaultB;
-
-  if (launcher.parentNode !== composer) {
-    if (launcher.parentNode) launcher.remove();
-    composer.appendChild(launcher);
-  }
+  // Check and apply glow state
+  checkLauncherGlowState();
 }
 
 // Clean extracted text before sending to LLM for refinement
@@ -3512,18 +3777,21 @@ initLauncher();
 document.body.addEventListener('input', (e) => {
   if (e.target && (e.target.id === 'prompt-textarea' || e.target.tagName === 'TEXTAREA' || e.target.getAttribute('contenteditable') === 'true')) {
     triggerInitLauncher();
+    checkLauncherGlowState();
   }
 }, true);
 
 document.body.addEventListener('paste', (e) => {
   if (e.target && (e.target.id === 'prompt-textarea' || e.target.tagName === 'TEXTAREA' || e.target.getAttribute('contenteditable') === 'true')) {
     triggerInitLauncher();
+    checkLauncherGlowState();
   }
 }, true);
 
 document.body.addEventListener('focus', (e) => {
   if (e.target && (e.target.id === 'prompt-textarea' || e.target.tagName === 'TEXTAREA' || e.target.getAttribute('contenteditable') === 'true')) {
     triggerInitLauncher();
+    checkLauncherGlowState();
   }
 }, true);
 
