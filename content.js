@@ -2894,6 +2894,10 @@ function showLauncherPopover(launcher, input, rawPrompt) {
 }
 
 async function refineInputPrompt(input, rawPrompt) {
+  if (isContextInvalidated()) {
+    toast("Extension updated. Please reload the page to activate.", true);
+    return;
+  }
   const launcher = document.getElementById('cep-launcher');
   if (!launcher || launcher.classList.contains('cep-loading')) return;
 
