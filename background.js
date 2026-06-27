@@ -262,8 +262,12 @@ async function fetchChatGPTFile(fileId, authHeader, conversationId) {
 async function handleLLMRefinePrompt({ provider, apiKey, rawPrompt }) {
   const system = `You are a master prompt engineer. Your task is to refine, structure, and optimize the user's raw prompt to get the best possible response from an LLM.
 Preserve the user's core intent, key details, instructions, constraints, and language, but improve clarity, formatting, instruction sequencing, and context engineering.
-Make it concise yet extremely clear, using structured formatting (e.g. markdown headers, bullet points) where appropriate.
-Output ONLY the refined prompt. Do not include any introductory or concluding remarks, conversational filler, or explanations. Do not put markdown code fences (like \`\`\`) around the prompt, unless the prompt itself contains code. Just output the raw refined prompt text directly.`;
+
+CRITICAL RULES:
+1. Always write the refined prompt from the USER's perspective (e.g. use "I", "my", "me"). Never write text that sounds like the AI assistant addressing the user (e.g. do NOT write "Please provide the question" or "Tell me what you need").
+2. If the user states they will provide something later (like a question, text, file, or code snippet), structure the prompt so the user is telling the LLM: "I will provide X in a subsequent message. Once I do, please do Y according to these constraints: ...".
+3. Make it concise yet extremely clear, using structured formatting (e.g. markdown headers, bullet points) where appropriate.
+4. Output ONLY the refined prompt. Do not include any introductory or concluding remarks, conversational filler, or explanations. Do not put markdown code fences (like \`\`\`) around the prompt, unless the prompt itself contains code. Just output the raw refined prompt text directly.`;
 
   const user = rawPrompt;
   if (provider === "anthropic") return callAnthropic(apiKey, system, user);
