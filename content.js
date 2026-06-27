@@ -2902,7 +2902,13 @@ async function refineInputPrompt(input, rawPrompt) {
   const apiKey = stored.apiKeys?.[provider] || "";
 
   if (!apiKey) {
-    toast(`❌ Set an API key in extension settings to refine prompts`, true);
+    toast(`❌ Please set up your ${provider.toUpperCase()} API key in settings!`, true);
+    await chrome.storage.local.set({ open_tab: "settings" });
+    chrome.runtime.sendMessage({ action: "openExtensionPopup" }).then(res => {
+      if (!res || !res.success) {
+        chrome.runtime.sendMessage({ action: "openPopupTab" });
+      }
+    });
     return;
   }
 
