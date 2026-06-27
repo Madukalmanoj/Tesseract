@@ -1,4 +1,4 @@
-// OmniExtract — Popup Script
+// Tesseract — Popup Script
 
 let extractedData = null;
 let currentProvider = "groq";

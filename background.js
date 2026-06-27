@@ -1,4 +1,4 @@
-// OmniExtract — Background Service Worker
+// Tesseract — Background Service Worker
 
 chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   // Debug: test a single fileId and return raw API response

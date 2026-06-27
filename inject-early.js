@@ -1,4 +1,4 @@
-// OmniExtract — Page-context hook (MAIN world, document_start)
+// Tesseract — Page-context hook (MAIN world, document_start)
 (function() {
   if (window.__cep) return;
   const IS_CLAUDE = window.location.hostname.includes('claude.ai');

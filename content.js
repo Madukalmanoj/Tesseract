@@ -1,4 +1,4 @@
-// OmniExtract — Content Script
+// Tesseract — Content Script
 (function() {
 'use strict';
 
@@ -3064,7 +3064,7 @@ function initLauncher() {
   if (isNew) {
     launcher = document.createElement('div');
     launcher.id = 'cep-launcher';
-    launcher.title = 'OmniExtract';
+    launcher.title = 'Tesseract';
     // Professional SVG icon — capsule/extract symbol
     launcher.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M12 2L3 7V17L12 22L21 17V7L12 2Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
@@ -3370,7 +3370,7 @@ async function showTray() {
       <div class="cep-logo-info">
         <div class="cep-logo-symbol"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2L3 7V17L12 22L21 17V7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 22V12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M21 7L12 12L3 7" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12" r="2" fill="currentColor" opacity="0.6"/></svg></div>
         <div class="cep-hdr-info">
-          <h1>OmniExtract</h1>
+          <h1>Tesseract</h1>
           <p>Launcher</p>
         </div>
       </div>
