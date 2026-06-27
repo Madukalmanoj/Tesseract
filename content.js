@@ -2843,7 +2843,7 @@ function showLauncherPopover(launcher, input, rawPrompt) {
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 2L15 9L22 12L15 15L12 22L9 15L2 12L9 9Z" fill="currentColor" opacity="0.3"/>
       </svg>
-      <span>✨ Refine Prompt</span>
+      <span>Refine Prompt</span>
     </button>
     <button class="cep-popover-btn" id="cep-popover-menu">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2851,7 +2851,7 @@ function showLauncherPopover(launcher, input, rawPrompt) {
         <line x1="3" y1="6" x2="21" y2="6"></line>
         <line x1="3" y1="18" x2="21" y2="18"></line>
       </svg>
-      <span>☰ Open Menu</span>
+      <span>Open Menu</span>
     </button>
   `;
 
