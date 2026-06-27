@@ -2777,6 +2777,7 @@ async function toggleTray() {
       if (e.toString().includes("Extension context invalidated") || e.message?.includes("Extension context invalidated")) {
         toast("Extension updated. Please reload the page to activate.", true);
       }
+    }
   }
 }
 
