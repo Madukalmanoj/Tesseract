@@ -900,7 +900,6 @@
     const urlStr = String(u||'');
     if (isBlockedUrl(urlStr)) {
       this.__cepBlocked = true;
-      return _xopen.apply(this, [m, 'about:blank', ...r]);
     }
     this.__cepUrl = urlStr;
     const om = this.__cepUrl.match(/\/organizations\/([a-f0-9-]{36})\//);
@@ -910,13 +909,28 @@
   XMLHttpRequest.prototype.send = function(...args) {
     if (this.__cepBlocked) {
       setTimeout(() => {
-        if (typeof this.onerror === 'function') {
-          this.onerror(new ProgressEvent('error'));
+        try {
+          Object.defineProperty(this, 'readyState', { value: 4, writable: true, configurable: true });
+          Object.defineProperty(this, 'status', { value: 0, writable: true, configurable: true });
+          Object.defineProperty(this, 'statusText', { value: '', writable: true, configurable: true });
+          Object.defineProperty(this, 'responseText', { value: '', writable: true, configurable: true });
+          Object.defineProperty(this, 'response', { value: '', writable: true, configurable: true });
+        } catch(e) {
+          console.warn("[CEP] Failed to define mocked properties on blocked XHR:", e);
         }
+
+        this.dispatchEvent(new Event('readystatechange'));
+        this.dispatchEvent(new ProgressEvent('error'));
+        this.dispatchEvent(new ProgressEvent('loadend'));
+
         if (typeof this.onreadystatechange === 'function') {
-          this.readyState = 4;
-          this.status = 0;
-          this.onreadystatechange();
+          try { this.onreadystatechange(); } catch(_) {}
+        }
+        if (typeof this.onerror === 'function') {
+          try { this.onerror(new ProgressEvent('error')); } catch(_) {}
+        }
+        if (typeof this.onloadend === 'function') {
+          try { this.onloadend(new ProgressEvent('loadend')); } catch(_) {}
         }
       }, 0);
       return;
