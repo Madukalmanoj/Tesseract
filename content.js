@@ -2979,17 +2979,6 @@ function findToolbarRow() {
   const input = document.querySelector(inputSel);
   if (!input) return null;
 
-  let composer = input.parentElement;
-  while (composer && composer !== document.body) {
-    if (composer.tagName === 'FORM' || composer.getAttribute('role') === 'presentation' || composer.classList.contains('composer') || composer.offsetHeight > 150) {
-      break;
-    }
-    composer = composer.parentElement;
-  }
-  if (!composer) composer = document.body;
-
-  // We look for buttons inside the composer. We search for common button types
-  // to walk up from (mic, send, upload, settings, etc.)
   const btnSelectors = [
     'button[data-testid="send-button"]',
     'button[data-testid*="send"]',
@@ -3007,6 +2996,19 @@ function findToolbarRow() {
     'button[aria-label*="File" i]',
     'button[aria-label*="Add" i]'
   ];
+
+  let composer = input.parentElement;
+  while (composer && composer !== document.body) {
+    if (composer.tagName === 'FORM' || composer.getAttribute('role') === 'presentation' || composer.classList.contains('composer')) {
+      break;
+    }
+    const hasBtn = btnSelectors.some(sel => composer.querySelector(sel));
+    if (hasBtn) {
+      break;
+    }
+    composer = composer.parentElement;
+  }
+  if (!composer) composer = document.body;
 
   for (const sel of btnSelectors) {
     const btn = composer.querySelector(sel);
