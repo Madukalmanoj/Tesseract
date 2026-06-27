@@ -6,13 +6,21 @@
   // ── Suppress noisy CSP / ad-tracking console errors from the host page ──
   const _origError = console.error;
   const _origWarn = console.warn;
-  const CSP_NOISE = /Content Security Policy|doubleclick\.net|ad\.doubleclick|Refused to connect|violates the.*directive|SERVICE_WORKER|no longer used.*Unregistering|react-i18next|initReactI18next|No ID or name found in config/i;
+  const CSP_NOISE = /Content Security Policy|doubleclick\.net|ad\.doubleclick|Refused to connect|violates the.*directive|SERVICE_WORKER|no longer used.*Unregistering|react-i18next|initReactI18next|No ID or name found in config|RequestError|Conversation not found/i;
   console.error = function(...args) {
-    if (args.some(a => typeof a === 'string' && CSP_NOISE.test(a))) return;
+    if (args.some(a => {
+      if (!a) return false;
+      const str = (typeof a === 'string') ? a : (a.message || a.stack || String(a));
+      return CSP_NOISE.test(str);
+    })) return;
     return _origError.apply(console, args);
   };
   console.warn = function(...args) {
-    if (args.some(a => typeof a === 'string' && CSP_NOISE.test(a))) return;
+    if (args.some(a => {
+      if (!a) return false;
+      const str = (typeof a === 'string') ? a : (a.message || a.stack || String(a));
+      return CSP_NOISE.test(str);
+    })) return;
     return _origWarn.apply(console, args);
   };
 
