@@ -14,13 +14,22 @@ Tesseract is a powerful, developer-friendly Chrome extension that helps you capt
 
 ## Installation
 
-To install Tesseract as an unpacked developer extension:
+To install the Tesseract extension on any Chromium-based browser (Google Chrome, Microsoft Edge, Brave, Opera, etc.):
 
-1. **Download/Clone** this repository to your local machine.
-2. Open **Google Chrome** and navigate to `chrome://extensions`.
-3. Enable **Developer mode** using the toggle switch in the top-right corner.
-4. Click the **Load unpacked** button in the top-left corner.
-5. Select the repository root folder (which contains `manifest.json`).
+1. **Download the Repository ZIP**: 
+   - Click the green **Code** button on the GitHub repository page and select **Download ZIP** (or clone the repository).
+2. **Extract the ZIP**:
+   - Locate the downloaded `.zip` file on your machine and extract/unzip it into a folder of your choice.
+3. **Open the Browser Extensions Page**:
+   - Open your web browser and navigate to the extensions settings page:
+     - **Google Chrome**: `chrome://extensions/`
+     - **Microsoft Edge**: `edge://extensions/`
+     - **Brave Browser**: `brave://extensions/`
+4. **Enable Developer Mode**:
+   - Turn on the **Developer mode** toggle switch (usually located in the top-right corner of the extensions page).
+5. **Load the Unpacked Extension**:
+   - Click the **Load unpacked** button (usually located in the top-left corner).
+   - In the file selection dialog, select the extracted folder (choose the directory that directly contains the `manifest.json` file).
 
 ---
 
